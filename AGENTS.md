@@ -6,10 +6,11 @@ Start here before changing code. This file is the stable table of contents for b
 
 1. `README.md`
 2. `ARCHITECTURE.md`
-3. `docs/product-specs/index.md`
-4. `docs/design-docs/index.md`
-5. `docs/QUALITY_SCORE.md`
-6. `docs/references/harness-engineering-notes.md`
+3. `docs/PLAN.md`
+4. `docs/product-specs/index.md`
+5. `docs/design-docs/index.md`
+6. `docs/QUALITY_SCORE.md`
+7. `docs/references/harness-engineering-notes.md`
 
 ## Working Rules
 
@@ -30,6 +31,7 @@ Start here before changing code. This file is the stable table of contents for b
 
 ## Key Paths
 
+- Project plan: `docs/PLAN.md`
 - Product scope: `docs/product-specs/starter-scope.md`
 - Design beliefs: `docs/design-docs/core-beliefs.md`
 - Workflow config: `docs/design-docs/workflow-config.md`

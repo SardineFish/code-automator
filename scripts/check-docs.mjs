@@ -8,6 +8,7 @@ const requiredPaths = [
   "README.md",
   "AGENTS.md",
   "ARCHITECTURE.md",
+  "docs/PLAN.md",
   "docs/QUALITY_SCORE.md",
   "docs/design-docs/index.md",
   "docs/design-docs/core-beliefs.md",
@@ -19,6 +20,7 @@ const requiredPaths = [
 const requiredAgentReferences = [
   "README.md",
   "ARCHITECTURE.md",
+  "docs/PLAN.md",
   "docs/product-specs/index.md",
   "docs/design-docs/index.md",
   "docs/QUALITY_SCORE.md",
