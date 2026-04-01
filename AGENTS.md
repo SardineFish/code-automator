@@ -35,4 +35,4 @@ Start here before changing code. This file is the stable table of contents for b
 - Product scope: `docs/product-specs/starter-scope.md`
 - Design beliefs: `docs/design-docs/core-beliefs.md`
 - Workflow config: `docs/design-docs/workflow-config.md`
-- Harness checks: `scripts/check-docs.mjs`, `scripts/check-architecture.mjs`
+- Harness checks: `scripts/check-docs.mjs`

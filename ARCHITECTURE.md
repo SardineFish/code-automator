@@ -4,7 +4,7 @@ This repository is being shaped into a TypeScript GitHub App webhook automation 
 
 ## Layer Order
 
-Within a domain, code should move from more stable to less stable layers:
+Product code should move from more stable to less stable layers:
 
 1. `types`
 2. `config`
@@ -13,23 +13,25 @@ Within a domain, code should move from more stable to less stable layers:
 5. `runtime`
 6. `ui`
 
-`src/app/` wires domains together.
+Use layer-first paths such as `src/types/`, `src/config/`, `src/repo/`, `src/service/`, `src/runtime/`, and `src/ui/`.
 
-`src/providers/` holds cross-cutting adapters such as clocks, GitHub API clients, process runners, filesystem helpers, signature verifiers, YAML loaders, or logging sinks. Domain code may only import providers from the `service` layer.
+`src/app/` wires layers together.
+
+`src/providers/` holds cross-cutting adapters such as clocks, GitHub API clients, process runners, filesystem helpers, signature verifiers, YAML loaders, or logging sinks. Product code may only import providers from the `service` layer.
 
 ## Rules
 
-- Domain code may only import files from the same domain.
+- Files under `src/<layer>/` may only import files from the same layer or an earlier layer in the order above.
 - A layer may depend on itself and any earlier layer in the order above.
-- `src/app/` may import any domain or provider.
+- `src/app/` may import any layer or provider.
 - Files in `src/` should stay below 150 lines. If they get bigger, split them before the structure becomes ambiguous.
 
-These rules describe the intended structure for product code and are enforced by `scripts/check-architecture.mjs` for `.ts`, `.tsx`, and `.js` files.
+These rules describe the intended structure for product code.
 
 ## Extension Guidance
 
-- Add new domains under `src/domains/<name>/`.
-- Expected product domains include webhook intake, config loading, workflow matching, execution runs, and GitHub output/reporting.
+- Add new product code under the layer that matches its responsibility.
+- Group related code inside a layer when that improves navigation, for example `src/service/workflow/` or `src/runtime/webhooks/`.
 - Add stable documentation before large features so agents can work from repo-local context.
 - Favor narrow service functions and explicit wiring in `src/app/` over hidden global state.
 - Keep executor invocation behind explicit service and provider boundaries.

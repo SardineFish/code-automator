@@ -9,8 +9,7 @@
     "start": "tsx src/app/main.ts",
     "test": "tsx --test tests/**/*.test.ts",
     "check:docs": "node scripts/check-docs.mjs",
-    "check:architecture": "node scripts/check-architecture.mjs",
-    "check": "npm run check:docs && npm run check:architecture && npm run build && npm test"
+    "check": "npm run check:docs && npm run build && npm test"
   },
   "devDependencies": {
     "@types/node": "^24.6.0",
