@@ -25,7 +25,7 @@ Start here before changing code. This file is the stable table of contents for b
 ## Current State
 
 - The product target is a GitHub App webhook automation service called GitHub Agent Orchestrator.
-- The placeholder practice source has been removed from `src/`. The product runtime and tests are still largely unimplemented.
+- The starter runtime is implemented in `src/` with config loading, webhook intake, trigger normalization, workflow selection, executor dispatch, and CI-backed verification.
 - The current documented design is a YAML-driven workflow engine with ordered workflows such as `issue-plan`, `issue-implement`, `issue-at`, and `pr-review`.
 - Workflow routing is first-match-wins. Specific command workflows must appear before generic mention handlers.
 
@@ -35,4 +35,4 @@ Start here before changing code. This file is the stable table of contents for b
 - Product scope: `docs/product-specs/starter-scope.md`
 - Design beliefs: `docs/design-docs/core-beliefs.md`
 - Workflow config: `docs/design-docs/workflow-config.md`
-- Harness checks: `scripts/check-docs.mjs`
+- Harness checks: `scripts/check-docs.mjs`, `scripts/check-architecture.mjs`

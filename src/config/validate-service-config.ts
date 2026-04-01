@@ -14,6 +14,7 @@ import {
   expectMap,
   readBoolean,
   readInteger,
+  readOptionalInteger,
   readOptionalEnvMap,
   readRequiredNode,
   readString,
@@ -42,15 +43,12 @@ function readServerConfig(root: ReturnType<typeof expectMap>): ServerConfig {
     readRequiredNode(server, "webhookPath", "server.webhookPath"),
     "server.webhookPath"
   );
-
   if (!webhookPath.startsWith("/")) {
     throw new ConfigError("server.webhookPath", "Expected a path starting with '/'.");
   }
-
   if (port < 1 || port > 65535) {
     throw new ConfigError("server.port", "Expected an integer between 1 and 65535.");
   }
-
   return { host, port, webhookPath };
 }
 
@@ -86,13 +84,19 @@ function readExecutors(root: ReturnType<typeof expectMap>): Record<string, Execu
     const definition = expectMap(item.value, executorPath);
     const run = readString(readRequiredNode(definition, "run", `${executorPath}.run`), `${executorPath}.run`);
     const env = readOptionalEnvMap(definition.get("env", true), `${executorPath}.env`);
-    result[name] = { run, env };
-  }
+    const timeoutMs = readOptionalInteger(
+      definition.get("timeoutMs", true),
+      `${executorPath}.timeoutMs`
+    );
 
+    if (timeoutMs !== undefined && timeoutMs < 1) {
+      throw new ConfigError(`${executorPath}.timeoutMs`, "Expected an integer greater than 0.");
+    }
+    result[name] = { run, env, timeoutMs };
+  }
   if (Object.keys(result).length === 0) {
     throw new ConfigError("executors", "Expected at least one executor.");
   }
-
   return result;
 }
 
@@ -123,21 +127,16 @@ function readWorkflow(
     if (!executorNames.has(use)) {
       throw new ConfigError(`${path}.use`, `Unknown executor '${use}'.`);
     }
-
     const on = onValues.map((value, index) => {
       if (!isTriggerKey(value)) {
         throw new ConfigError(`${path}.on[${index}]`, `Unsupported trigger '${value}'.`);
       }
-
       return value;
     });
-
     workflows.push({ name, on, use, prompt });
   }
-
   if (workflows.length === 0) {
     throw new ConfigError("workflow", "Expected at least one workflow.");
   }
-
   return workflows;
 }

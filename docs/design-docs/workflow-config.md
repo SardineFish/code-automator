@@ -24,10 +24,12 @@ whitelist:
 executors:
   codex:
     run: /path/to/codex --yolo -w ${workspace} exec ${prompt}
+    timeoutMs: 900000
     env:
       FOO: BAR
   claude:
     run: /path/to/claude --yolo ${prompt}
+    timeoutMs: 900000
     env:
       FOO: BAR
 workflow:
@@ -67,6 +69,7 @@ workflow:
 - `workspace`: workspace lifecycle policy for executor runs.
 - `whitelist`: the allowed GitHub users and repositories.
 - `executors`: named command templates plus static environment variables.
+- `executors.<name>.timeoutMs`: optional per-executor timeout in milliseconds.
 - `workflow`: ordered workflow definitions keyed by workflow name.
 
 ## Trigger Normalization
@@ -92,6 +95,7 @@ workflow:
 - `${prompt}` is the rendered workflow prompt.
 - `${workspace}` is the per-run workspace path when workspace creation is enabled, otherwise an empty string.
 - Executor `env` entries are added to the child process environment for that run.
+- Executor `${prompt}` and `${workspace}` values are shell-escaped before the command runs through `/bin/sh -lc`.
 - Missing or unsupported template variables throw an error.
 - `null` template values render as an empty string.
 - Objects and arrays render as compact JSON.
@@ -129,3 +133,8 @@ Aliases are convenience fields derived from structured context, and missing fiel
 - When `workspace.enabled` is `false`, the service does not create a workspace automatically.
 - When `workspace.cleanupAfterRun` is `true`, the run directory is removed after execution completes.
 - Command templates that reference `${workspace}` should be wrapped so they behave correctly when the value is empty.
+
+## Runtime Startup
+
+- `GITHUB_WEBHOOK_SECRET` is loaded from `.env` or the ambient environment.
+- The service starts with `npm start -- --config /path/to/service.yml` or `GITHUB_AGENT_ORCHESTRATOR_CONFIG=/path/to/service.yml npm start`.

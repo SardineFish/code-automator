@@ -1,28 +1,25 @@
 # GitHub Agent Orchestrator
 
-This repository defines an agent-friendly codebase for a GitHub App driven automation service. The planned product receives GitHub webhooks, filters them through a YAML configuration file, builds structured prompts from GitHub context, and dispatches configurable executor commands to plan or execute work.
+GitHub Agent Orchestrator is a YAML-driven GitHub App webhook automation service. It verifies webhook deliveries, filters them through repo and user whitelists, normalizes supported GitHub events into canonical triggers, renders prompts from normalized workflow input, and dispatches configured executor commands.
 
 ## Current Status
 
-Plans 1-3 are implemented: the repository now has typed config contracts, YAML loading and validation, and a shared template renderer. The webhook runtime and executor runtime are still unimplemented.
+The starter runtime is implemented. The repository now includes config loading and validation, template rendering, execution services, webhook normalization, deterministic workflow selection, an HTTP webhook server, fixture-driven workflow tests, and CI for `npm run check`.
 
 ## Quick Start
+
+1. Install dependencies.
+2. Create `.env` with `GITHUB_WEBHOOK_SECRET=...`.
+3. Create a YAML config file.
+4. Run the service.
 
 ```bash
 npm install
 npm run check
-npm start
+npm start -- --config ./service.yml
 ```
 
-`npm start` still runs a TypeScript placeholder until runtime plans are complete.
-
-## Planned Workflow Model
-
-1. A GitHub App webhook arrives with installation context.
-2. The service loads a YAML config that defines whitelisted users, whitelisted repos, executors, workflows, and workspace behavior.
-3. The webhook is normalized into one or more canonical triggers such as `issue:open`, `issue:command:plan`, `issue:comment`, `pr:comment`, or `pr:review`.
-4. Workflows are evaluated in file order and the first matching workflow runs.
-5. The selected workflow renders a prompt from the normalized GitHub inputs, then dispatches the configured executor command template.
+You can also set `GITHUB_AGENT_ORCHESTRATOR_CONFIG=./service.yml` instead of passing `--config`.
 
 ## Config Model
 
@@ -40,16 +37,18 @@ workspace:
   cleanupAfterRun: false
 whitelist:
   user:
-    - Foo
+    - octocat
   repo:
-    - Bar/Baz
+    - acme/demo
 executors:
   codex:
     run: /path/to/codex --yolo -w ${workspace} exec ${prompt}
+    timeoutMs: 900000
     env:
       FOO: BAR
   claude:
     run: /path/to/claude --yolo ${prompt}
+    timeoutMs: 900000
     env:
       FOO: BAR
 workflow:
@@ -80,42 +79,35 @@ workflow:
     prompt: Check PR ${in.prNumber} in repo ${in.repo}. You received review input: ${in.content}.
 ```
 
-- `clientId` and `appId` are required app metadata.
-- `botHandle` controls mention parsing for command and mention triggers.
-- `server` defines HTTP binding and webhook path.
-- `whitelist.user` and `whitelist.repo` gate which actors and repositories may trigger workflows.
-- `executors` are named command templates plus per-executor environment variables.
-- `workflow` is an ordered mapping. The first workflow whose `on` list matches the normalized event wins.
+## Workflow Model
 
-## Trigger Semantics
+1. A GitHub App webhook arrives on `server.webhookPath`.
+2. The server verifies `X-Hub-Signature-256`, parses JSON, checks installation presence, and enforces `whitelist.user` and `whitelist.repo`.
+3. Supported events are normalized into canonical triggers such as `issue:open`, `issue:command:plan`, `issue:comment`, `pr:comment`, and `pr:review`.
+4. Workflows are evaluated in YAML declaration order and stop at the first match.
+5. The selected workflow renders a prompt from `${in.*}` fields and the executor command runs through `/bin/sh -lc`.
 
-- `issue:open` fires when a whitelisted user opens a new issue in a whitelisted repo.
-- `issue:command:<name>` is derived from an issue comment that mentions the bot with `@<bot-handle> /<name>` or `@<bot-handle> <name>`.
-- `issue:comment` is the generic issue mention trigger for `@<bot-handle> <request>`.
-- `pr:comment` and `pr:review` are PR-side review inputs from whitelisted users.
-- A single webhook may yield multiple candidate triggers. The service must run only the first matching workflow in YAML order. This is why `issue-plan` must appear before `issue-at`.
+## Template Variables
 
-## Variable Interpolation
-
-- Workflow prompts may use both simple aliases and structured fields under `${in.*}`.
-- Common aliases: `${in.repo}`, `${in.subjectNumber}`, `${in.prNumber}`, `${in.content}`, `${in.actorLogin}`, `${in.eventName}`.
-- Structured fields: `${in.repository.fullName}`, `${in.subject.kind}`, `${in.comment.body}`, `${in.review.state}`.
+- Workflow prompts may use `${in.*}` variables.
+- Common aliases include `${in.repo}`, `${in.subjectNumber}`, `${in.prNumber}`, `${in.content}`, `${in.actorLogin}`, and `${in.eventName}`.
+- Structured fields include `${in.repository.fullName}`, `${in.subject.kind}`, `${in.comment.body}`, and `${in.review.state}`.
 - Executor commands may use `${prompt}` and `${workspace}`.
-- Missing or unsupported template variables fail fast with a descriptive error.
-- When `workspace.enabled` is `true`, each execution creates a new subdirectory under `workspace.baseDir` and `${workspace}` resolves to that path.
-- When `workspace.enabled` is `false`, the service does not create a workspace and `${workspace}` resolves to an empty string. Executor wrappers should tolerate that case.
+- `${prompt}` and `${workspace}` are shell-escaped before command execution.
+- Missing or unsupported template variables fail fast.
 
-## Environment Variables
+## Production Bootstrap
 
-- `.env` is used for secret loading scaffolding.
-- `GITHUB_WEBHOOK_SECRET` is required by `loadEnvironmentConfig` for webhook signature verification in later runtime plans.
+- The service reads `GITHUB_WEBHOOK_SECRET` from `.env` or the ambient environment.
+- Start with `npm start -- --config /path/to/service.yml`.
+- Point your GitHub App webhook URL at `http(s)://<host>:<port><webhookPath>`.
+- Executors are command templates only; containerization, sandboxing, and repo checkout strategy stay operator-defined.
 
 ## Repository Guide
 
 - `AGENTS.md` is the agent entry point and repo table of contents.
-- `ARCHITECTURE.md` defines the intended layer model for the future service.
-- `docs/product-specs/starter-scope.md` captures the first implementation slice.
-- `docs/design-docs/core-beliefs.md` records the design choices that should remain stable as code is added.
-- `docs/design-docs/workflow-config.md` records the YAML config contract and matching rules.
+- `ARCHITECTURE.md` defines the layer model.
+- `docs/product-specs/starter-scope.md` captures the shipped starter scope.
+- `docs/design-docs/workflow-config.md` defines the YAML contract and `in` variable model.
 - `scripts/` contains the harness checks.
-- `tsconfig.json` defines the TypeScript compiler settings for `src/` and `tests/`.
+- `.github/workflows/check.yml` runs `npm run check` in CI.

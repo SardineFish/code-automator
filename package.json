@@ -1,15 +1,16 @@
 {
-  "name": "harness-engineering-skeleton",
+  "name": "github-agent-orchestrator",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A TypeScript scaffold for a GitHub App driven automation service.",
+  "description": "A YAML-driven GitHub App webhook automation service.",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "tsx src/app/main.ts",
     "test": "tsx --test \"tests/**/*.test.ts\"",
+    "check:architecture": "node scripts/check-architecture.mjs",
     "check:docs": "node scripts/check-docs.mjs",
-    "check": "npm run check:docs && npm run build && npm test"
+    "check": "npm run check:docs && npm run check:architecture && npm run build && npm test"
   },
   "devDependencies": {
     "@types/node": "^24.6.0",

@@ -20,6 +20,7 @@ export interface WhitelistConfig {
 export interface ExecutorConfig {
   run: string;
   env: Record<string, string>;
+  timeoutMs?: number;
 }
 
 export interface WorkflowConfigEntry {

@@ -24,6 +24,7 @@ whitelist:
 executors:
   codex:
     run: codex exec \${prompt}
+    timeoutMs: 900000
     env:
       FOO: BAR
   claude:
@@ -50,6 +51,7 @@ test("parseServiceConfig returns ordered workflows and typed config", () => {
   assert.equal(parsed.workflow[0].name, "issue-plan");
   assert.equal(parsed.workflow[1].name, "issue-at");
   assert.deepEqual(parsed.executors.codex.env, { FOO: "BAR" });
+  assert.equal(parsed.executors.codex.timeoutMs, 900000);
 });
 
 test("parseServiceConfig rejects unknown workflow executor", () => {
@@ -104,6 +106,16 @@ test("parseServiceConfig requires each workflow to declare at least one trigger"
   assert.throws(() => parseServiceConfig(invalid, "test.yml"), (error) => {
     assert.ok(error instanceof ConfigError);
     assert.match(error.message, /workflow\.issue-at\.on: Expected at least one trigger\./);
+    return true;
+  });
+});
+
+test("parseServiceConfig requires positive executor timeouts", () => {
+  const invalid = validConfig.replace("timeoutMs: 900000", "timeoutMs: 0");
+
+  assert.throws(() => parseServiceConfig(invalid, "test.yml"), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /executors\.codex\.timeoutMs: Expected an integer greater than 0\./);
     return true;
   });
 });

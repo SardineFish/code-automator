@@ -44,6 +44,14 @@ export function readInteger(node: unknown, path: string): number {
   return node.value;
 }
 
+export function readOptionalInteger(node: unknown, path: string): number | undefined {
+  if (!node) {
+    return undefined;
+  }
+
+  return readInteger(node, path);
+}
+
 export function readStringSequence(node: unknown, path: string): string[] {
   if (!isSeq(node)) {
     throw new ConfigError(path, "Expected a sequence.");

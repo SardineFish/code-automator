@@ -11,8 +11,9 @@ The first implementation slice for GitHub Agent Orchestrator is a YAML-driven wo
 - Evaluate workflows in declaration order and run only the first matching workflow.
 - Support the initial workflow set `issue-plan`, `issue-implement`, `issue-at`, and `pr-review`.
 - Render workflow prompts from normalized input fields exposed through `${in.*}`, including simple aliases such as `${in.repo}`, `${in.subjectNumber}`, `${in.prNumber}`, and `${in.content}`.
-- Launch the configured executor command with `${prompt}`, `${workspace}`, and executor-specific environment variables.
+- Launch the configured executor command with `${prompt}`, `${workspace}`, executor-specific environment variables, and optional executor timeouts.
 - Support service-side workspace settings with `workspace.enabled`, `workspace.baseDir`, and `workspace.cleanupAfterRun`.
+- Load the webhook secret from `.env` or the ambient environment through `GITHUB_WEBHOOK_SECRET`.
 
 ## Non-Goals
 
