@@ -1,6 +1,6 @@
 # Architecture
 
-This repository is being shaped into a GitHub App webhook automation service. The structure stays strict so agents can navigate it mechanically as product code is added.
+This repository is being shaped into a TypeScript GitHub App webhook automation service. The structure stays strict so agents can navigate it mechanically as product code is added.
 
 ## Layer Order
 
@@ -24,7 +24,7 @@ Within a domain, code should move from more stable to less stable layers:
 - `src/app/` may import any domain or provider.
 - Files in `src/` should stay below 150 lines. If they get bigger, split them before the structure becomes ambiguous.
 
-These rules describe the intended structure for product code and are enforced by `scripts/check-architecture.mjs`.
+These rules describe the intended structure for product code and are enforced by `scripts/check-architecture.mjs` for `.ts`, `.tsx`, and `.js` files.
 
 ## Extension Guidance
 

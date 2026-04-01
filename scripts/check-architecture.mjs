@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const srcDir = path.join(rootDir, "src");
+const supportedExtensions = new Set([".ts", ".tsx", ".js"]);
 const allowedByLayer = {
   types: new Set(["types"]),
   config: new Set(["types", "config"]),
@@ -14,7 +15,7 @@ const allowedByLayer = {
 };
 
 const failures = [];
-const files = collectFiles(srcDir).filter((file) => file.endsWith(".js"));
+const files = collectFiles(srcDir).filter((file) => supportedExtensions.has(path.extname(file)));
 
 for (const filePath of files) {
   const relativePath = path.relative(rootDir, filePath);
@@ -83,7 +84,20 @@ function collectImports(filePath) {
 
 function resolveImport(fromFile, specifier) {
   const candidate = path.resolve(path.dirname(fromFile), specifier);
-  return path.extname(candidate) ? candidate : `${candidate}.js`;
+
+  if (path.extname(candidate)) {
+    return candidate;
+  }
+
+  for (const extension of supportedExtensions) {
+    const withExtension = `${candidate}${extension}`;
+
+    if (statExists(withExtension)) {
+      return withExtension;
+    }
+  }
+
+  return `${candidate}.ts`;
 }
 
 function validateImport(sourceRelativePath, targetRelativePath) {
@@ -138,5 +152,13 @@ function validateImport(sourceRelativePath, targetRelativePath) {
 
   if (!allowedLayers || !allowedLayers.has(targetLayer)) {
     failures.push(`${sourceRelativePath} imports ${targetRelativePath}. ${sourceLayer} cannot depend on ${targetLayer}.`);
+  }
+}
+
+function statExists(absolutePath) {
+  try {
+    return statSync(absolutePath).isFile();
+  } catch {
+    return false;
   }
 }

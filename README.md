@@ -4,17 +4,18 @@ This repository defines an agent-friendly codebase for a GitHub App driven autom
 
 ## Current Status
 
-This phase initializes the product documentation and scaffolding. The placeholder practice source has been removed, and the product runtime is not implemented yet.
+This phase initializes the product documentation and TypeScript scaffolding. The product runtime is not implemented yet, but the repo now builds and runs a minimal TypeScript entrypoint.
 
 ## Quick Start
 
 ```bash
 npm install
 npm run check
+npm start
 npm run plan:new -- add-webhook-intake
 ```
 
-`npm start` currently prints a not-implemented message. It is not the future webhook service.
+`npm start` currently runs a TypeScript `Hello, world!` placeholder. It is not the future webhook service.
 
 ## Planned Workflow Model
 
@@ -102,3 +103,4 @@ workflow:
 - `docs/design-docs/core-beliefs.md` records the design choices that should remain stable as code is added.
 - `docs/design-docs/workflow-config.md` records the YAML config contract and matching rules.
 - `scripts/` contains the harness checks and the execution-plan generator.
+- `tsconfig.json` defines the TypeScript compiler settings for `src/` and `tests/`.
