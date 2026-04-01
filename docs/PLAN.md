@@ -17,19 +17,19 @@ This file defines the implementation order for the whole GitHub Agent Orchestrat
 
 ## Plans
 
-### Plan 1: Core config typing
+### Plan 1: Core config typing [done]
 
 - Deliver stable TypeScript types for `clientId`, `workspace`, `whitelist`, `executors`, `workflow`, trigger keys, and normalized workflow input.
 - Keep this plan limited to types and small test fixtures.
 - Exit when the documented YAML contract can be expressed without `any` or ad hoc string literals.
 
-### Plan 2: YAML config loading and validation
+### Plan 2: YAML config loading and validation [done]
 
 - Load one YAML config file, preserve workflow declaration order, and validate required keys and value shapes.
 - Produce actionable validation errors that point to the broken section.
 - Keep templating, execution, and webhook handling out of this plan.
 
-### Plan 3: Template string renderer and variable system
+### Plan 3: Template string renderer and variable system [done]
 
 - Implement the shared renderer for `${in.*}`, `${prompt}`, and `${workspace}`.
 - Define explicit variable maps and failure behavior for missing or unsupported variables.
@@ -44,13 +44,13 @@ This file defines the implementation order for the whole GitHub Agent Orchestrat
 ### Plan 5: Webhook server
 
 - Add the HTTP entrypoint, request parsing, signature verification hook, and basic response model.
-- Verify `clientId` and installation context at the edge before runtime dispatch.
+- Verify webhook signature and installation context at the edge before runtime dispatch.
 - Enforce `whitelist.user` and `whitelist.repo` at the edge so disallowed requests stop before trigger selection.
 - Keep trigger matching stubbed or minimal here; this plan is about intake and safe request boundaries.
 
 ### Plan 6: Trigger normalization
 
-- Convert supported GitHub webhook payloads into canonical triggers and normalized inputs such as `issueId`, `prId`, `repo`, and `content`.
+- Convert supported GitHub webhook payloads into canonical triggers and normalized inputs that include both structured fields and simple aliases such as `subjectNumber`, `prNumber`, `repo`, and `content`.
 - Cover command alias handling for `plan`, `approve`, `go`, `implement`, and `code`.
 
 ### Plan 7: Trigger-workflow engine

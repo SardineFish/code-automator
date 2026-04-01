@@ -4,13 +4,13 @@ The first implementation slice for GitHub Agent Orchestrator is a YAML-driven wo
 
 ## Goals
 
-- Load a single YAML config file containing `clientId`, `workspace`, `whitelist`, `executors`, and `workflow`.
+- Load a single YAML config file containing `clientId`, `appId`, `botHandle`, `server`, `workspace`, `whitelist`, `executors`, and `workflow`.
 - Receive GitHub App webhooks with installation context.
 - Filter events by `whitelist.user` and `whitelist.repo`.
 - Normalize webhook inputs into canonical triggers such as `issue:open`, `issue:command:plan`, `issue:command:approve`, `issue:comment`, `pr:comment`, and `pr:review`.
 - Evaluate workflows in declaration order and run only the first matching workflow.
 - Support the initial workflow set `issue-plan`, `issue-implement`, `issue-at`, and `pr-review`.
-- Render workflow prompts from normalized input fields such as `${in.issueId}`, `${in.prId}`, `${in.repo}`, and `${in.content}`.
+- Render workflow prompts from normalized input fields exposed through `${in.*}`, including simple aliases such as `${in.repo}`, `${in.subjectNumber}`, `${in.prNumber}`, and `${in.content}`.
 - Launch the configured executor command with `${prompt}`, `${workspace}`, and executor-specific environment variables.
 - Support service-side workspace settings with `workspace.enabled`, `workspace.baseDir`, and `workspace.cleanupAfterRun`.
 
@@ -45,13 +45,13 @@ The initial documented workflows are:
 The initial planning workflow should render a prompt shaped like:
 
 ```text
-Check issue ${in.issueId} in repo ${in.repo}. Make an implementation plan and comment on this issue. Do not write any code.
+Check subject ${in.subjectNumber} in repo ${in.repo}. Make an implementation plan and comment on this issue. Do not write any code.
 ```
 
 The generic issue mention workflow should render a prompt shaped like:
 
 ```text
-Check issue ${in.issueId} in repo ${in.repo}. Handle the user's request: ${in.content}. Do not write any code.
+Check subject ${in.subjectNumber} in repo ${in.repo}. Handle the user's request: ${in.content}. Do not write any code.
 ```
 
 Command aliases normalize both `@<bot-handle> /plan` and `@<bot-handle> plan` to `issue:command:plan`. The same normalization rule applies to `approve`, `go`, `implement`, and `code`.

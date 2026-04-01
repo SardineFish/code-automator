@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "tsx src/app/main.ts",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "tsx --test \"tests/**/*.test.ts\"",
     "check:docs": "node scripts/check-docs.mjs",
     "check": "npm run check:docs && npm run build && npm test"
   },
@@ -18,5 +18,9 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "yaml": "^2.8.3"
   }
 }

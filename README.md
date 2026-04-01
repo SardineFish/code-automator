@@ -4,7 +4,7 @@ This repository defines an agent-friendly codebase for a GitHub App driven autom
 
 ## Current Status
 
-This phase initializes the product documentation and TypeScript scaffolding. The product runtime is not implemented yet, but the repo now builds and runs a minimal TypeScript entrypoint.
+Plans 1-3 are implemented: the repository now has typed config contracts, YAML loading and validation, and a shared template renderer. The webhook runtime and executor runtime are still unimplemented.
 
 ## Quick Start
 
@@ -14,7 +14,7 @@ npm run check
 npm start
 ```
 
-`npm start` currently runs a TypeScript `Hello, world!` placeholder. It is not the future webhook service.
+`npm start` still runs a TypeScript placeholder until runtime plans are complete.
 
 ## Planned Workflow Model
 
@@ -28,6 +28,12 @@ npm start
 
 ```yaml
 clientId: your-github-app-client-id
+appId: 123456
+botHandle: github-agent-orchestrator
+server:
+  host: 0.0.0.0
+  port: 3000
+  webhookPath: /webhooks/github
 workspace:
   enabled: false
   baseDir: /var/lib/github-agent-orchestrator/workspaces
@@ -52,7 +58,7 @@ workflow:
       - issue:open
       - issue:command:plan
     use: codex
-    prompt: Check issue ${in.issueId} in repo ${in.repo}. Make an implementation plan and comment on this issue. Do not write any code.
+    prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Make an implementation plan and comment on this issue. Do not write any code.
   issue-implement:
     on:
       - issue:command:approve
@@ -60,21 +66,23 @@ workflow:
       - issue:command:implement
       - issue:command:code
     use: claude
-    prompt: Check issue ${in.issueId} in repo ${in.repo}. Assign the issue to yourself, implement your plan, and open a PR.
+    prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Assign the issue to yourself, implement your plan, and open a PR.
   issue-at:
     on:
       - issue:comment
     use: codex
-    prompt: Check issue ${in.issueId} in repo ${in.repo}. Handle the user's request: ${in.content}. Do not write any code.
+    prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Handle the user's request: ${in.content}. Do not write any code.
   pr-review:
     on:
       - pr:comment
       - pr:review
     use: codex
-    prompt: Check PR ${in.prId} in repo ${in.repo}. You received a review comment: ${in.content}.
+    prompt: Check PR ${in.prNumber} in repo ${in.repo}. You received review input: ${in.content}.
 ```
 
-- `clientId` identifies the GitHub App client ID this service should accept.
+- `clientId` and `appId` are required app metadata.
+- `botHandle` controls mention parsing for command and mention triggers.
+- `server` defines HTTP binding and webhook path.
 - `whitelist.user` and `whitelist.repo` gate which actors and repositories may trigger workflows.
 - `executors` are named command templates plus per-executor environment variables.
 - `workflow` is an ordered mapping. The first workflow whose `on` list matches the normalized event wins.
@@ -89,10 +97,18 @@ workflow:
 
 ## Variable Interpolation
 
-- Workflow prompts may use `${in.issueId}`, `${in.prId}`, `${in.repo}`, and `${in.content}`.
+- Workflow prompts may use both simple aliases and structured fields under `${in.*}`.
+- Common aliases: `${in.repo}`, `${in.subjectNumber}`, `${in.prNumber}`, `${in.content}`, `${in.actorLogin}`, `${in.eventName}`.
+- Structured fields: `${in.repository.fullName}`, `${in.subject.kind}`, `${in.comment.body}`, `${in.review.state}`.
 - Executor commands may use `${prompt}` and `${workspace}`.
+- Missing or unsupported template variables fail fast with a descriptive error.
 - When `workspace.enabled` is `true`, each execution creates a new subdirectory under `workspace.baseDir` and `${workspace}` resolves to that path.
 - When `workspace.enabled` is `false`, the service does not create a workspace and `${workspace}` resolves to an empty string. Executor wrappers should tolerate that case.
+
+## Environment Variables
+
+- `.env` is used for secret loading scaffolding.
+- `GITHUB_WEBHOOK_SECRET` is required by `loadEnvironmentConfig` for webhook signature verification in later runtime plans.
 
 ## Repository Guide
 
