@@ -8,15 +8,14 @@ Start here before changing code. This file is the stable table of contents for b
 2. `ARCHITECTURE.md`
 3. `docs/product-specs/index.md`
 4. `docs/design-docs/index.md`
-5. `docs/PLANS.md`
-6. `docs/QUALITY_SCORE.md`
-7. `docs/references/harness-engineering-notes.md`
+5. `docs/QUALITY_SCORE.md`
+6. `docs/references/harness-engineering-notes.md`
 
 ## Working Rules
 
 - Keep root documentation limited to `README.md`, `AGENTS.md`, and `ARCHITECTURE.md`.
 - Put stable knowledge in `docs/`, not in issue comments or ad hoc notes.
-- Use `npm run plan:new -- <slug>` for substantial work, then track progress in `docs/exec-plans/active/`.
+- Keep stable design and product decisions in `docs/`.
 - Treat the YAML service config as the source of truth for whitelist rules, executor templates, workspace settings, and trigger behavior.
 - Preserve the declared layer order in `ARCHITECTURE.md`.
 - Add or update an executable check in `scripts/` when you introduce a new invariant.
@@ -34,7 +33,4 @@ Start here before changing code. This file is the stable table of contents for b
 - Product scope: `docs/product-specs/starter-scope.md`
 - Design beliefs: `docs/design-docs/core-beliefs.md`
 - Workflow config: `docs/design-docs/workflow-config.md`
-- Active plans: `docs/exec-plans/active/README.md`
-- Completed plans: `docs/exec-plans/completed/README.md`
-- Tech debt tracker: `docs/exec-plans/tech-debt-tracker.md`
 - Harness checks: `scripts/check-docs.mjs`, `scripts/check-architecture.mjs`

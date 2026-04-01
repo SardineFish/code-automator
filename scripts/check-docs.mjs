@@ -8,16 +8,12 @@ const requiredPaths = [
   "README.md",
   "AGENTS.md",
   "ARCHITECTURE.md",
-  "docs/PLANS.md",
   "docs/QUALITY_SCORE.md",
   "docs/design-docs/index.md",
   "docs/design-docs/core-beliefs.md",
   "docs/product-specs/index.md",
   "docs/product-specs/starter-scope.md",
-  "docs/references/harness-engineering-notes.md",
-  "docs/exec-plans/active/README.md",
-  "docs/exec-plans/completed/README.md",
-  "docs/exec-plans/tech-debt-tracker.md"
+  "docs/references/harness-engineering-notes.md"
 ];
 
 const requiredAgentReferences = [
@@ -25,10 +21,8 @@ const requiredAgentReferences = [
   "ARCHITECTURE.md",
   "docs/product-specs/index.md",
   "docs/design-docs/index.md",
-  "docs/PLANS.md",
   "docs/QUALITY_SCORE.md",
-  "docs/references/harness-engineering-notes.md",
-  "docs/exec-plans/tech-debt-tracker.md"
+  "docs/references/harness-engineering-notes.md"
 ];
 
 const failures = [];
@@ -67,7 +61,6 @@ if (statExists(agentsPath)) {
 
 assertContains("docs/design-docs/index.md", ["core-beliefs.md"]);
 assertContains("docs/product-specs/index.md", ["starter-scope.md"]);
-assertContains("docs/PLANS.md", ["docs/exec-plans/active/", "docs/exec-plans/completed/"]);
 
 if (failures.length > 0) {
   process.stderr.write("Documentation harness check failed:\n");
@@ -104,4 +97,3 @@ function statExists(absolutePath) {
     return false;
   }
 }
-

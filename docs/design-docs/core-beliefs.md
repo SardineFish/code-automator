@@ -9,4 +9,4 @@
 - Keep workspace creation optional so operators can rely on external isolation strategies when needed.
 - Turn important workflow rules into code, scripts, or CI checks instead of relying on memory.
 - Optimize for short feedback loops: a one-command check is more useful than a long checklist.
-- Keep plans, specs, and quality notes small, current, and easy to find from `AGENTS.md`.
+- Keep specs, and quality notes small, current, and easy to find from `AGENTS.md`.
