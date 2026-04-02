@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import test from "node:test";
 
-import { App } from "../../../src/app/app.js";
+import { App, type ProviderHandler } from "../../../src/app/app.js";
 import { createServiceConfig } from "../../fixtures/service-config.js";
 import { createNoOpLogSink } from "../../fixtures/log-sink.js";
 
@@ -21,7 +21,7 @@ test("App dispatches exact provider routes and lets providers own the response",
 });
 
 test("App rejects duplicate provider routes", () => {
-  const builder = App.listen("127.0.0.1", 0, createRuntimeOptions());
+  const builder = App(createAppConfig(), createRuntimeOptions());
   builder.provider("/chat", (_request, response) => {
     response.end("ok");
   });
@@ -61,9 +61,9 @@ test("App returns 500 when a provider submits duplicate trigger names", async ()
 });
 
 async function startApp(
-  handler: Parameters<ReturnType<typeof App.listen>["provider"]>[1]
+  handler: ProviderHandler
 ) {
-  const server = await App.listen("127.0.0.1", 0, createRuntimeOptions())
+  const server = await App(createAppConfig(), createRuntimeOptions())
     .provider("/chat", handler)
     .listen();
   const address = server.address();
@@ -78,9 +78,18 @@ async function startApp(
   };
 }
 
+function createAppConfig() {
+  return {
+    ...createServiceConfig(),
+    server: {
+      host: "127.0.0.1",
+      port: 0
+    }
+  };
+}
+
 function createRuntimeOptions() {
   return {
-    config: createServiceConfig(),
     processRunner: {
       async run() {
         throw new Error("should not run");
@@ -117,6 +126,7 @@ function createRuntimeOptions() {
       },
       async reconcileActiveRuns() {}
     },
-    logSink: createNoOpLogSink()
+    logSink: createNoOpLogSink(),
+    reconcileIntervalMs: 0
   };
 }

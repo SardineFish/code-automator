@@ -26,6 +26,14 @@ export interface WhitelistConfig {
   repo: string[];
 }
 
+export interface GitHubProviderConfig {
+  url: string;
+  clientId: string;
+  appId: number;
+  botHandle: string;
+  whitelist: WhitelistConfig;
+}
+
 export interface ExecutorConfig {
   run: string;
   env: Record<string, string>;
@@ -48,6 +56,7 @@ export interface AppConfig {
   logging: LoggingConfig;
   workspace: WorkspaceConfig;
   tracking: TrackingConfig;
+  gh?: GitHubProviderConfig;
   executors: Record<string, ExecutorConfig>;
   workflow: WorkflowDefinition[];
 }

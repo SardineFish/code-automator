@@ -1,11 +1,14 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import type { InstallationTokenProvider } from "../../service/github/create-installation-token-provider.js";
-import type { GitHubProviderConfig } from "../../service/github/read-github-provider-config.js";
-import { extractWebhookGateContext, normalizeWebhookEvent } from "../../service/normalize/normalize-webhook-event.js";
+import { loadEnvironmentFromDotenv, type EnvironmentConfig } from "../../config/load-env-config.js";
+import { fetchGitHubInstallationTokenClient } from "../../providers/github/github-installation-token-client.js";
+import { createConsoleLogSink } from "../../providers/logging/winston-log-sink.js";
+import { createInstallationTokenProvider, type InstallationTokenProvider } from "../../service/github/create-installation-token-provider.js";
+import type { GitHubProviderConfig } from "../../types/config.js";
 import { getWhitelistRejectionReason } from "../../service/orchestration/check-whitelist.js";
+import { extractWebhookGateContext, normalizeWebhookEvent } from "../../service/normalize/normalize-webhook-event.js";
 import { verifyWebhookSignature } from "../../service/security/verify-webhook-signature.js";
-import type { LogSink } from "../../types/logging.js";
+import type { LogSink, RuntimeLogLevel } from "../../types/logging.js";
 import type { AppContext, OrchestrationResult } from "../../types/runtime.js";
 import { RequestBodyError, readRequestBody } from "../../runtime/http/read-request-body.js";
 import { buildDebugContentFields } from "./github-provider-debug-content.js";
@@ -15,6 +18,37 @@ export interface CreateGitHubProviderHandlerOptions {
   webhookSecret: string;
   installationTokenProvider: InstallationTokenProvider;
   logSink: LogSink;
+}
+
+export interface GitHubProviderOptions {
+  webhookSecret?: string;
+  installationTokenProvider?: InstallationTokenProvider;
+  logSink?: LogSink;
+  logLevel?: RuntimeLogLevel;
+  baseEnv?: NodeJS.ProcessEnv;
+}
+
+export function githubProvider(
+  github: GitHubProviderConfig,
+  options: GitHubProviderOptions = {}
+) {
+  let environment: EnvironmentConfig | undefined;
+  const getEnvironment = (): EnvironmentConfig => {
+    environment ??= loadEnvironmentFromDotenv(undefined, options.baseEnv ?? process.env);
+    return environment;
+  };
+
+  return createGitHubProviderHandler({
+    github,
+    webhookSecret: options.webhookSecret ?? getEnvironment().webhookSecret,
+    installationTokenProvider:
+      options.installationTokenProvider ??
+      createInstallationTokenProvider(
+        getEnvironment().appPrivateKeyPath,
+        fetchGitHubInstallationTokenClient
+      ),
+    logSink: options.logSink ?? createConsoleLogSink(options.logLevel ?? "info")
+  });
 }
 
 export function createGitHubProviderHandler(options: CreateGitHubProviderHandlerOptions) {

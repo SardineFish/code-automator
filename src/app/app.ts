@@ -1,21 +1,12 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
-import type { ProcessRunner } from "../providers/process/process-runner.js";
-import type { WorkspaceRepo } from "../repo/workspace/workspace-repo.js";
-import { processTriggerSubmission } from "../service/orchestration/process-trigger-submission.js";
-import type { WorkflowTracker } from "../service/tracking/workflow-tracker.js";
 import type { ServiceConfig } from "../types/config.js";
-import type { AppContext, TriggerSubmissionInput } from "../types/runtime.js";
 import type { LogSink } from "../types/logging.js";
+import type { AppContext } from "../types/runtime.js";
+import { createAppRuntimeOptions, type AppRuntimeOptions, type AppRuntimeOverrides, initializeWorkflowTracking } from "./default-app-runtime.js";
+import { createAppContext } from "./create-app-context.js";
 
-export interface AppRuntimeOptions {
-  config: ServiceConfig;
-  processRunner: ProcessRunner;
-  workspaceRepo: WorkspaceRepo;
-  workflowTracker: WorkflowTracker;
-  logSink: LogSink;
-  baseEnv?: NodeJS.ProcessEnv;
-}
+export type AppOptions = AppRuntimeOverrides;
 
 export type ProviderHandler = (
   req: IncomingMessage,
@@ -23,19 +14,17 @@ export type ProviderHandler = (
   context: AppContext
 ) => Promise<void> | void;
 
-export const App = {
-  listen(host: string, port: number, options: AppRuntimeOptions): AppBuilder {
-    return new AppBuilder(host, port, options);
-  }
-};
+export function App(config: ServiceConfig, options: AppOptions = {}): AppBuilder {
+  return new AppBuilder(config, createAppRuntimeOptions(config, options));
+}
 
 class AppBuilder {
   readonly #providers = new Map<string, ProviderHandler>();
+  #initializePromise?: Promise<void>;
 
   constructor(
-    private readonly host: string,
-    private readonly port: number,
-    private readonly options: AppRuntimeOptions
+    private readonly config: ServiceConfig,
+    private readonly runtime: AppRuntimeOptions
   ) {}
 
   provider(routePath: string, handler: ProviderHandler): AppBuilder {
@@ -51,9 +40,11 @@ class AppBuilder {
   }
 
   async listen(): Promise<Server> {
+    await this.initialize();
+
     const server = createServer((request, response) => {
       const path = getRequestPath(request);
-      const requestLogSink = this.options.logSink.child({ path });
+      const requestLogSink = this.runtime.logSink.child({ path });
       logCompletedRequest(request, response, path, requestLogSink);
 
       void this.handleRequest(path, request, response).catch((error) => {
@@ -71,10 +62,17 @@ class AppBuilder {
 
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
-      server.listen(this.port, this.host, () => {
+      server.listen(this.config.server.port, this.config.server.host, () => {
         server.off("error", reject);
         resolve();
       });
+    });
+
+    this.runtime.logSink.info({
+      message: "server listening",
+      host: this.config.server.host,
+      port: this.config.server.port,
+      routePaths: [...this.#providers.keys()]
     });
 
     return server;
@@ -92,81 +90,18 @@ class AppBuilder {
       return;
     }
 
-    const context = createAppContext(routePath, this.options);
+    const context = createAppContext(routePath, this.config, this.runtime);
     await handler(request, response, context);
 
     if (!response.headersSent) {
       respond(response, 500, "Provider did not send a response");
     }
   }
-}
 
-function createAppContext(routePath: string, options: AppRuntimeOptions): AppContext {
-  let submitted = false;
-  const triggers = new Map<string, { input: Record<string, unknown>; env: Record<string, string> }>();
-
-  return {
-    config: options.config,
-    trigger(name, payload) {
-      assertTriggerName(name);
-      assertTriggerPayload(payload);
-      if (submitted) {
-        throw new Error("Cannot register triggers after submit().");
-      }
-      if (triggers.has(name)) {
-        throw new Error(`Duplicate trigger '${name}' in one request is not allowed.`);
-      }
-
-      triggers.set(name, {
-        input: payload.in,
-        env: payload.env ?? {}
-      });
-    },
-    submit() {
-      if (submitted) {
-        throw new Error("submit() may only be called once per request.");
-      }
-      submitted = true;
-
-      return processTriggerSubmission({
-        config: options.config,
-        source: routePath,
-        triggers: [...triggers.entries()].map(([name, trigger]) => ({
-          name,
-          input: trigger.input,
-          env: trigger.env
-        })),
-        processRunner: options.processRunner,
-        workspaceRepo: options.workspaceRepo,
-        workflowTracker: options.workflowTracker,
-        logSink: options.logSink.child({ source: routePath }),
-        baseEnv: options.baseEnv
-      });
-    }
-  };
-}
-
-function assertTriggerName(value: string): void {
-  if (value.trim() === "") {
-    throw new Error("Trigger name must be a non-empty string.");
+  private initialize(): Promise<void> {
+    this.#initializePromise ??= initializeWorkflowTracking(this.config, this.runtime);
+    return this.#initializePromise;
   }
-}
-
-function assertTriggerPayload(payload: TriggerSubmissionInput): void {
-  if (!isPlainObject(payload.in)) {
-    throw new Error("Trigger input must be a plain object.");
-  }
-  if (payload.env && !isStringMap(payload.env)) {
-    throw new Error("Trigger env must be a string-to-string map.");
-  }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isStringMap(value: unknown): value is Record<string, string> {
-  return isPlainObject(value) && Object.values(value).every((entry) => typeof entry === "string");
 }
 
 function getRequestPath(request: IncomingMessage): string {

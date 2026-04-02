@@ -4,7 +4,7 @@ import { once } from "node:events";
 import test from "node:test";
 
 import { App } from "../../src/app/app.js";
-import { createGitHubProviderHandler } from "../../src/app/providers/github-provider.js";
+import { githubProvider } from "../../src/app/providers/github-provider.js";
 import {
   issueCommentPayload,
   issueOpenedPayload,
@@ -110,22 +110,25 @@ test("GitHub provider routes the documented workflows through the provider app",
 });
 
 async function startGitHubApp() {
-  const config = createServiceConfig();
-  const github = config.gh as {
-    url: string;
-    clientId: string;
-    appId: number;
-    botHandle: string;
-    whitelist: { user: string[]; repo: string[] };
+  const config = {
+    ...createServiceConfig(),
+    server: {
+      host: "127.0.0.1",
+      port: 0
+    }
   };
+  const github = config.gh;
+
+  if (!github) {
+    throw new Error("Missing test GitHub config.");
+  }
   const commands: string[] = [];
   const envs: NodeJS.ProcessEnv[] = [];
   const started: string[] = [];
   let runCount = 0;
   const logSink = createNoOpLogSink();
 
-  const server = await App.listen("127.0.0.1", 0, {
-    config,
+  const server = await App(config, {
     processRunner: {
       async run() {
         throw new Error("should not run");
@@ -169,12 +172,12 @@ async function startGitHubApp() {
       },
       async reconcileActiveRuns() {}
     },
-    logSink
+    logSink,
+    reconcileIntervalMs: 0
   })
     .provider(
       github.url,
-      createGitHubProviderHandler({
-        github,
+      githubProvider(github, {
         webhookSecret: "top-secret",
         installationTokenProvider: {
           async createInstallationToken() {
