@@ -39,7 +39,7 @@ export function readInteger(value: Record<string, unknown>, key: string): number
 }
 
 export function parseIssueMention(bodyText: string, botHandle: string): IssueMentionParseResult {
-  const mentionPattern = new RegExp(`^\\s*@${escapeRegex(botHandle)}\\b\\s*(.*)$`, "i");
+  const mentionPattern = new RegExp(`^\\s*@${escapeRegex(botHandle)}\\s*(.*)`, "si");
   const mentionMatch = bodyText.match(mentionPattern);
 
   if (!mentionMatch) {

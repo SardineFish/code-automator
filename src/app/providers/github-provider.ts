@@ -156,7 +156,7 @@ export async function githubProvider(
       // Plain issue comments only count when they explicitly mention the bot.
       const mention = parseIssueMention(content, github.botHandle);
       if (!mention.hasMention) {
-        requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "unsupported_event" });
+        requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "not_mentioned" });
         return respond(response, 202, "Accepted");
       }
 
