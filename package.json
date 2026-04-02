@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "tsx src/app/main.ts",
-    "test": "tsx --test \"tests/**/*.test.ts\"",
+    "test": "node --import tsx --test $(find tests -name '*.test.ts' -print)",
     "check:architecture": "node scripts/check-architecture.mjs",
     "check:docs": "node scripts/check-docs.mjs",
     "check": "npm run check:docs && npm run check:architecture && npm run build && npm test"
