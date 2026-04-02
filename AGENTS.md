@@ -17,6 +17,8 @@ Start here before changing code. This file is the stable table of contents for b
 - Keep root documentation limited to `README.md`, `AGENTS.md`, and `ARCHITECTURE.md`.
 - Put stable knowledge in `docs/`, not in issue comments or ad hoc notes.
 - Keep stable design and product decisions in `docs/`.
+- Follow the commit rule in `docs/PLAN.md`: one numbered plan per commit. Do not batch multiple numbered plans into one commit.
+- Treat commit boundaries as rollback and review boundaries. Each numbered plan must stay independently testable so version control can isolate, revert, or inspect that step cleanly.
 - Treat the YAML service config as the source of truth for whitelist rules, executor templates, workspace settings, and trigger behavior.
 - Preserve the declared layer order in `ARCHITECTURE.md`.
 - Add or update an executable check in `scripts/` when you introduce a new invariant.

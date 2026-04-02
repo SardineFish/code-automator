@@ -8,6 +8,7 @@ This file defines the implementation order for the whole GitHub Agent Orchestrat
 - Do not combine multiple plans in a single commit, even when the changes are small.
 - If a plan is too large for one clean commit, split that plan into smaller child tasks before coding.
 - Every plan should land with tests or executable checks for the invariants it introduces.
+- Treat each plan commit as an explicit version-control checkpoint so the repo can be reviewed, bisected, reverted, or rolled back at that exact product step.
 
 ## Sequencing Rule
 
