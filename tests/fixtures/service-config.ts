@@ -1,14 +1,10 @@
-import type { ServiceConfig } from "../../src/types/config.js";
+import type { AppConfig } from "../../src/types/config.js";
 
-export function createServiceConfig(): ServiceConfig {
+export function createServiceConfig(): AppConfig {
   return {
-    clientId: "client-id",
-    appId: 123456,
-    botHandle: "github-agent-orchestrator",
     server: {
       host: "127.0.0.1",
-      port: 3000,
-      webhookPath: "/webhooks/github"
+      port: 3000
     },
     tracking: {
       stateFile: "/tmp/github-agent-orchestrator/state.json",
@@ -19,9 +15,15 @@ export function createServiceConfig(): ServiceConfig {
       baseDir: "/tmp/github-agent-orchestrator",
       cleanupAfterRun: false
     },
-    whitelist: {
-      user: ["octocat", "reviewer"],
-      repo: ["acme/demo"]
+    gh: {
+      url: "/gh-hook",
+      clientId: "client-id",
+      appId: 123456,
+      botHandle: "github-agent-orchestrator",
+      whitelist: {
+        user: ["octocat", "reviewer"],
+        repo: ["acme/demo"]
+      }
     },
     executors: {
       codex: {

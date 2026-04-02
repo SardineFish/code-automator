@@ -2,11 +2,10 @@ import path from "node:path";
 import { type Document, isMap } from "yaml";
 
 import type {
+  AppConfig,
   ExecutorConfig,
   ServerConfig,
-  ServiceConfig,
   TrackingConfig,
-  WhitelistConfig,
   WorkflowDefinition,
   WorkspaceConfig
 } from "../types/config.js";
@@ -26,36 +25,33 @@ import {
 export function validateServiceConfigDocument(
   document: Document.Parsed,
   baseDir: string
-): ServiceConfig {
+): AppConfig {
   const root = expectMap(document.contents, "root");
-  const clientId = readString(readRequiredNode(root, "clientId", "clientId"), "clientId");
-  const appId = readInteger(readRequiredNode(root, "appId", "appId"), "appId");
-  const botHandle = readString(readRequiredNode(root, "botHandle", "botHandle"), "botHandle");
   const server = readServerConfig(root);
   const workspace = readWorkspaceConfig(root);
   const tracking = readTrackingConfig(root, baseDir);
-  const whitelist = readWhitelistConfig(root);
   const executors = readExecutors(root);
   const workflow = readWorkflow(root, new Set(Object.keys(executors)));
+  const providerSections = readProviderSections(document);
 
-  return { clientId, appId, botHandle, server, workspace, tracking, whitelist, executors, workflow };
+  return {
+    ...providerSections,
+    server,
+    workspace,
+    tracking,
+    executors,
+    workflow
+  };
 }
 
 function readServerConfig(root: ReturnType<typeof expectMap>): ServerConfig {
   const server = expectMap(readRequiredNode(root, "server", "server"), "server");
   const host = readString(readRequiredNode(server, "host", "server.host"), "server.host");
   const port = readInteger(readRequiredNode(server, "port", "server.port"), "server.port");
-  const webhookPath = readString(
-    readRequiredNode(server, "webhookPath", "server.webhookPath"),
-    "server.webhookPath"
-  );
-  if (!webhookPath.startsWith("/")) {
-    throw new ConfigError("server.webhookPath", "Expected a path starting with '/'.");
-  }
   if (port < 1 || port > 65535) {
     throw new ConfigError("server.port", "Expected an integer between 1 and 65535.");
   }
-  return { host, port, webhookPath };
+  return { host, port };
 }
 
 function readWorkspaceConfig(root: ReturnType<typeof expectMap>): WorkspaceConfig {
@@ -83,15 +79,6 @@ function readTrackingConfig(root: ReturnType<typeof expectMap>, baseDir: string)
       readString(readRequiredNode(tracking, "logFile", "tracking.logFile"), "tracking.logFile"),
       baseDir
     )
-  };
-}
-
-function readWhitelistConfig(root: ReturnType<typeof expectMap>): WhitelistConfig {
-  const whitelist = expectMap(readRequiredNode(root, "whitelist", "whitelist"), "whitelist");
-
-  return {
-    user: readStringSequence(readRequiredNode(whitelist, "user", "whitelist.user"), "whitelist.user"),
-    repo: readStringSequence(readRequiredNode(whitelist, "repo", "whitelist.repo"), "whitelist.repo")
   };
 }
 
@@ -165,3 +152,24 @@ function readWorkflow(
 function resolveTrackingPath(filePath: string, baseDir: string): string {
   return path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
 }
+
+function readProviderSections(document: Document.Parsed): Record<string, unknown> {
+  const rawConfig = document.toJS() as Record<string, unknown>;
+  const providerSections: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(rawConfig)) {
+    if (!CORE_TOP_LEVEL_KEYS.has(key)) {
+      providerSections[key] = value;
+    }
+  }
+
+  return providerSections;
+}
+
+const CORE_TOP_LEVEL_KEYS = new Set([
+  "server",
+  "tracking",
+  "workspace",
+  "executors",
+  "workflow"
+]);

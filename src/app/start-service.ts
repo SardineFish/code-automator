@@ -8,6 +8,7 @@ import { shellProcessRunner } from "../providers/process/process-runner.js";
 import { fileWorkflowTrackerRepo } from "../repo/tracking/file-workflow-tracker-repo.js";
 import { defaultWorkspaceRepo } from "../repo/workspace/workspace-repo.js";
 import { createInstallationTokenProvider } from "../service/github/create-installation-token-provider.js";
+import { readGitHubRuntimeConfig } from "../service/github/read-github-runtime-config.js";
 import { processWebhookDelivery } from "../service/orchestration/process-webhook-delivery.js";
 import { createFileWorkflowTracker } from "../service/tracking/file-workflow-tracker.js";
 import { createWebhookServer } from "../runtime/http/create-webhook-server.js";
@@ -17,6 +18,7 @@ const RECONCILE_INTERVAL_MS = 2000;
 export async function startService(configPath: string): Promise<Server> {
   const environment = loadEnvironmentFromDotenv();
   const config = await loadServiceConfig(configPath);
+  const github = readGitHubRuntimeConfig(config);
   const installationTokenProvider = createInstallationTokenProvider(
     environment.appPrivateKeyPath,
     fetchGitHubInstallationTokenClient
@@ -49,13 +51,16 @@ export async function startService(configPath: string): Promise<Server> {
 
   reconcileTimer.unref();
   const server = createWebhookServer({
-    config,
+    routePath: github.url,
+    whitelist: github.whitelist,
     webhookSecret: environment.webhookSecret,
     logSink: consoleJsonLogSink,
     onDelivery: (delivery) =>
       processWebhookDelivery({
         ...delivery,
         config,
+        botHandle: github.botHandle,
+        clientId: github.clientId,
         processRunner: shellProcessRunner,
         workspaceRepo: defaultWorkspaceRepo,
         installationTokenProvider,
@@ -73,7 +78,7 @@ export async function startService(configPath: string): Promise<Server> {
     message: "server listening",
     host: config.server.host,
     port: config.server.port,
-    webhookPath: config.server.webhookPath
+    routePath: github.url
   });
 
   return server;

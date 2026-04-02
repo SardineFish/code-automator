@@ -3,12 +3,13 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { getWhitelistRejectionReason } from "../../service/orchestration/check-whitelist.js";
 import { extractWebhookGateContext } from "../../service/normalize/normalize-webhook-event.js";
 import { verifyWebhookSignature } from "../../service/security/verify-webhook-signature.js";
-import type { ServiceConfig } from "../../types/config.js";
+import type { WhitelistConfig } from "../../types/config.js";
 import type { DeliveryContext, LogSink, OrchestrationResult, RuntimeLogRecord } from "../../types/runtime.js";
 import { RequestBodyError, readRequestBody } from "./read-request-body.js";
 
 export interface CreateWebhookServerOptions {
-  config: ServiceConfig;
+  routePath: string;
+  whitelist: WhitelistConfig;
   webhookSecret: string;
   logSink: LogSink;
   onDelivery(delivery: DeliveryContext): Promise<OrchestrationResult>;
@@ -36,7 +37,7 @@ async function handleRequest(
   response: ServerResponse,
   options: CreateWebhookServerOptions
 ): Promise<void> {
-  if (getRequestPath(request) !== options.config.server.webhookPath) {
+  if (getRequestPath(request) !== options.routePath) {
     respond(response, 404, "Not Found");
     return;
   }
@@ -92,7 +93,7 @@ async function handleRequest(
     return;
   }
 
-  const rejectionReason = getWhitelistRejectionReason(options.config, gate);
+  const rejectionReason = getWhitelistRejectionReason(options.whitelist, gate);
 
   if (rejectionReason) {
     options.logSink.info(

@@ -11,6 +11,8 @@ import type { DeliveryContext, LogSink, OrchestrationResult } from "../../types/
 
 export interface ProcessWebhookDeliveryOptions extends DeliveryContext {
   config: ServiceConfig;
+  botHandle: string;
+  clientId: string;
   processRunner: ProcessRunner;
   workspaceRepo: WorkspaceRepo;
   installationTokenProvider: InstallationTokenProvider;
@@ -26,7 +28,7 @@ export async function processWebhookDelivery(
     eventName: options.eventName,
     deliveryId: options.deliveryId,
     payload: options.payload,
-    botHandle: options.config.botHandle
+    botHandle: options.botHandle
   });
 
   if (!normalized) {
@@ -105,7 +107,7 @@ async function continueWorkflowLaunch(
 
   try {
     const installationToken = await options.installationTokenProvider.createInstallationToken(
-      options.config.clientId,
+      options.clientId,
       installationId
     );
     const workspacePath = await prepareWorkspace({

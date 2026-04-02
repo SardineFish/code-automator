@@ -1,11 +1,11 @@
-import type { ServiceConfig } from "../../types/config.js";
+import type { WhitelistConfig } from "../../types/config.js";
 import type { WebhookGateContext } from "../../types/runtime.js";
 
 export function getWhitelistRejectionReason(
-  config: ServiceConfig,
+  whitelist: WhitelistConfig,
   gate: WebhookGateContext
 ): string | null {
-  const repoAllowed = config.whitelist.repo.some(
+  const repoAllowed = whitelist.repo.some(
     (repo) => repo.toLowerCase() === gate.repoFullName.toLowerCase()
   );
 
@@ -13,7 +13,7 @@ export function getWhitelistRejectionReason(
     return "repo_not_whitelisted";
   }
 
-  const userAllowed = config.whitelist.user.some(
+  const userAllowed = whitelist.user.some(
     (user) => user.toLowerCase() === gate.actorLogin.toLowerCase()
   );
 

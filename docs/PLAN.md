@@ -84,7 +84,7 @@ This file defines the implementation order for the whole GitHub Agent Orchestrat
 - Remove the GitHub-only config contract from the design docs and replace it with the target shared app config plus provider-owned sections.
 - Mark the new contract as pending until the runtime plans below land so the docs stay honest during the transition.
 
-### Plan 12: Shared app contracts and config loading [pending]
+### Plan 12: Shared app contracts and config loading [done]
 
 - Replace the GitHub-only core config with a provider-agnostic app config that validates only shared runtime keys.
 - Preserve arbitrary top-level provider sections on the parsed config so providers can interpret and validate their own fields.

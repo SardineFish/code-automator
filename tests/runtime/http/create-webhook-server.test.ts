@@ -141,8 +141,14 @@ async function startTestServer(
   overrides?: Partial<Parameters<typeof createWebhookServer>[0]>
 ) {
   const logs: Array<Record<string, unknown>> = [];
+  const config = createServiceConfig();
+  const github = config.gh as {
+    url: string;
+    whitelist: { user: string[]; repo: string[] };
+  };
   const server = createWebhookServer({
-    config: createServiceConfig(),
+    routePath: github.url,
+    whitelist: github.whitelist,
     webhookSecret: "top-secret",
     logSink: {
       info(record) {
@@ -167,7 +173,7 @@ async function startTestServer(
   return {
     server,
     logs,
-    url: `http://127.0.0.1:${address.port}${createServiceConfig().server.webhookPath}`
+    url: `http://127.0.0.1:${address.port}${github.url}`
   };
 }
 

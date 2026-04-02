@@ -5,13 +5,9 @@ import { ConfigError } from "../../src/config/config-error.js";
 import { parseServiceConfig } from "../../src/config/load-service-config.js";
 
 const validConfig = `
-clientId: app-client-id
-appId: 123456
-botHandle: github-agent-orchestrator
 server:
   host: 0.0.0.0
   port: 3000
-  webhookPath: /webhooks/github
 tracking:
   stateFile: state.json
   logFile: runs.jsonl
@@ -19,11 +15,18 @@ workspace:
   enabled: false
   baseDir: /tmp/gao
   cleanupAfterRun: false
-whitelist:
-  user:
-    - octocat
-  repo:
-    - acme/demo
+gh:
+  url: /gh-hook
+  clientId: app-client-id
+  appId: 123456
+  botHandle: github-agent-orchestrator
+  whitelist:
+    user:
+      - octocat
+    repo:
+      - acme/demo
+chat-bot:
+  url: /chat
 executors:
   codex:
     run: codex exec \${prompt}
@@ -49,14 +52,23 @@ workflow:
 test("parseServiceConfig returns ordered workflows and typed config", () => {
   const parsed = parseServiceConfig(validConfig, "/tmp/configs/test.yml");
 
-  assert.equal(parsed.clientId, "app-client-id");
-  assert.equal(parsed.appId, 123456);
   assert.equal(parsed.tracking.stateFile, "/tmp/configs/state.json");
   assert.equal(parsed.tracking.logFile, "/tmp/configs/runs.jsonl");
   assert.equal(parsed.workflow[0].name, "issue-plan");
   assert.equal(parsed.workflow[1].name, "issue-at");
   assert.deepEqual(parsed.executors.codex.env, { FOO: "BAR" });
   assert.equal(parsed.executors.codex.timeoutMs, 900000);
+  assert.deepEqual(parsed.gh, {
+    url: "/gh-hook",
+    clientId: "app-client-id",
+    appId: 123456,
+    botHandle: "github-agent-orchestrator",
+    whitelist: {
+      user: ["octocat"],
+      repo: ["acme/demo"]
+    }
+  });
+  assert.deepEqual(parsed["chat-bot"], { url: "/chat" });
 });
 
 test("parseServiceConfig rejects unknown workflow executor", () => {
@@ -67,28 +79,19 @@ test("parseServiceConfig rejects unknown workflow executor", () => {
   });
 });
 
-test("parseServiceConfig rejects unsupported trigger keys", () => {
-  const invalid = validConfig.replace("- issue:comment", "- issue:random");
-  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), {
-    name: "ConfigError",
-    message: /workflow\.issue-at\.on\[0\]: Unsupported trigger 'issue:random'\./
-  });
+test("parseServiceConfig accepts arbitrary non-empty trigger keys", () => {
+  const parsed = parseServiceConfig(
+    validConfig.replace("- issue:comment", "- chat:command:triage"),
+    "/tmp/configs/test.yml"
+  );
+
+  assert.deepEqual(parsed.workflow[1].on, ["chat:command:triage"]);
 });
 
 test("parseServiceConfig rejects duplicate keys from YAML parser", () => {
-  const invalid = `${validConfig}\nclientId: duplicate`;
+  const invalid = `${validConfig}\nserver:\n  host: 127.0.0.1\n  port: 3001`;
   assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), {
     name: "ConfigError"
-  });
-});
-
-test("parseServiceConfig requires webhook path to start with slash", () => {
-  const invalid = validConfig.replace("webhookPath: /webhooks/github", "webhookPath: webhooks/github");
-
-  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
-    assert.ok(error instanceof ConfigError);
-    assert.match(error.message, /server\.webhookPath: Expected a path starting with '\//);
-    return true;
   });
 });
 
@@ -111,6 +114,16 @@ test("parseServiceConfig requires each workflow to declare at least one trigger"
   assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
     assert.ok(error instanceof ConfigError);
     assert.match(error.message, /workflow\.issue-at\.on: Expected at least one trigger\./);
+    return true;
+  });
+});
+
+test("parseServiceConfig rejects empty trigger strings", () => {
+  const invalid = validConfig.replace("- issue:comment", "- ''");
+
+  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /workflow\.issue-at\.on\[0\]: Expected a non-empty string\./);
     return true;
   });
 });

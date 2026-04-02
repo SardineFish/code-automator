@@ -132,6 +132,8 @@ test("processWebhookDelivery launches tracked runs for the documented workflows"
   for (const scenario of scenarios) {
     const result = await processWebhookDelivery({
       config,
+      botHandle: "github-agent-orchestrator",
+      clientId: "client-id",
       eventName: scenario.eventName,
       payload: scenario.payload,
       processRunner,
@@ -160,6 +162,8 @@ test("processWebhookDelivery persists launch failures", async () => {
 
   const result = await processWebhookDelivery({
     config: createServiceConfig(),
+    botHandle: "github-agent-orchestrator",
+    clientId: "client-id",
     eventName: "issue_comment",
     payload: issueCommentPayload("@github-agent-orchestrator /plan"),
     processRunner: {
@@ -217,6 +221,8 @@ test("processWebhookDelivery keeps queued tracking when markRunning fails after 
 
   const result = await processWebhookDelivery({
     config: createServiceConfig(),
+    botHandle: "github-agent-orchestrator",
+    clientId: "client-id",
     eventName: "issue_comment",
     payload: issueCommentPayload("@github-agent-orchestrator /plan"),
     processRunner: {
@@ -275,6 +281,8 @@ test("processWebhookDelivery keeps queued tracking when markRunning fails after 
 test("processWebhookDelivery ignores unmatched deliveries", async () => {
   const result = await processWebhookDelivery({
     config: createServiceConfig(),
+    botHandle: "github-agent-orchestrator",
+    clientId: "client-id",
     eventName: "issue_comment",
     payload: issueCommentPayload("plain comment without mention"),
     processRunner: {

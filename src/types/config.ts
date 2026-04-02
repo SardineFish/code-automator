@@ -3,7 +3,6 @@ import type { TriggerKey } from "./triggers.js";
 export interface ServerConfig {
   host: string;
   port: number;
-  webhookPath: string;
 }
 
 export interface WorkspaceConfig {
@@ -38,26 +37,14 @@ export interface WorkflowDefinition extends WorkflowConfigEntry {
   name: string;
 }
 
-export interface RawServiceConfig {
-  clientId: string;
-  appId: number;
-  botHandle: string;
+export interface AppConfig {
+  [key: string]: unknown;
   server: ServerConfig;
   workspace: WorkspaceConfig;
   tracking: TrackingConfig;
-  whitelist: WhitelistConfig;
-  executors: Record<string, ExecutorConfig>;
-  workflow: Record<string, WorkflowConfigEntry>;
-}
-
-export interface ServiceConfig {
-  clientId: string;
-  appId: number;
-  botHandle: string;
-  server: ServerConfig;
-  workspace: WorkspaceConfig;
-  tracking: TrackingConfig;
-  whitelist: WhitelistConfig;
   executors: Record<string, ExecutorConfig>;
   workflow: WorkflowDefinition[];
 }
+
+export type RawServiceConfig = AppConfig;
+export type ServiceConfig = AppConfig;
