@@ -105,6 +105,7 @@ export function createFileWorkflowTracker(
           workflowName: completedRecord.workflowName,
           status,
           pid: completedRecord.pid,
+          source: completedRecord.source,
           repo: completedRecord.repoFullName
         });
         return completedRecord;

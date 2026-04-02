@@ -9,9 +9,9 @@ import { fileWorkflowTrackerRepo } from "../repo/tracking/file-workflow-tracker-
 import { defaultWorkspaceRepo } from "../repo/workspace/workspace-repo.js";
 import { createInstallationTokenProvider } from "../service/github/create-installation-token-provider.js";
 import { readGitHubRuntimeConfig } from "../service/github/read-github-runtime-config.js";
-import { processWebhookDelivery } from "../service/orchestration/process-webhook-delivery.js";
 import { createFileWorkflowTracker } from "../service/tracking/file-workflow-tracker.js";
-import { createWebhookServer } from "../runtime/http/create-webhook-server.js";
+import { App } from "./app.js";
+import { createGitHubRequestHandler } from "./create-github-request-handler.js";
 
 const RECONCILE_INTERVAL_MS = 2000;
 
@@ -50,27 +50,24 @@ export async function startService(configPath: string): Promise<Server> {
   }, RECONCILE_INTERVAL_MS);
 
   reconcileTimer.unref();
-  const server = createWebhookServer({
-    routePath: github.url,
-    whitelist: github.whitelist,
-    webhookSecret: environment.webhookSecret,
+  const server = await App.listen(config.server.host, config.server.port, {
+    config,
+    processRunner: shellProcessRunner,
+    workspaceRepo: defaultWorkspaceRepo,
+    workflowTracker,
     logSink: consoleJsonLogSink,
-    onDelivery: (delivery) =>
-      processWebhookDelivery({
-        ...delivery,
-        config,
-        botHandle: github.botHandle,
-        clientId: github.clientId,
-        processRunner: shellProcessRunner,
-        workspaceRepo: defaultWorkspaceRepo,
+    baseEnv: process.env
+  })
+    .provider(
+      github.url,
+      createGitHubRequestHandler({
+        github,
+        webhookSecret: environment.webhookSecret,
         installationTokenProvider,
-        workflowTracker,
-        logSink: consoleJsonLogSink,
-        baseEnv: process.env
+        logSink: consoleJsonLogSink
       })
-  });
-
-  await listen(server, config.server.port, config.server.host);
+    )
+    .listen();
 
   consoleJsonLogSink.info({
     timestamp: new Date().toISOString(),
@@ -82,14 +79,4 @@ export async function startService(configPath: string): Promise<Server> {
   });
 
   return server;
-}
-
-function listen(server: Server, port: number, host: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, host, () => {
-      server.off("error", reject);
-      resolve();
-    });
-  });
 }

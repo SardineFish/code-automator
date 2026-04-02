@@ -19,14 +19,15 @@ export interface WorkflowRunArtifacts {
 }
 
 export interface WorkflowRunContext {
+  source?: string;
   deliveryId?: string;
-  eventName: string;
+  eventName?: string;
   workflowName: string;
   matchedTrigger: TriggerKey;
   executorName: string;
-  repoFullName: string;
-  actorLogin: string;
-  installationId: number;
+  repoFullName?: string;
+  actorLogin?: string;
+  installationId?: number;
 }
 
 export interface ActiveWorkflowRunRecord extends WorkflowRunContext {

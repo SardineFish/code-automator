@@ -90,7 +90,7 @@ This file defines the implementation order for the whole GitHub Agent Orchestrat
 - Preserve arbitrary top-level provider sections on the parsed config so providers can interpret and validate their own fields.
 - Make workflow trigger keys generic non-empty strings while preserving YAML declaration order and first-match-wins selection.
 
-### Plan 13: Provider app runtime and submission engine [pending]
+### Plan 13: Provider app runtime and submission engine [done]
 
 - Replace the GitHub-only webhook server with a route-registered provider app that dispatches requests by provider URL.
 - Add request-scoped app context methods for collecting triggers and submitting them through the shared workflow engine.

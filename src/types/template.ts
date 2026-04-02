@@ -1,5 +1,3 @@
-import type { WorkflowTemplateInput } from "./workflow-input.js";
-
 export type TemplateValue =
   | string
   | number
@@ -9,7 +7,7 @@ export type TemplateValue =
   | { [key: string]: TemplateValue };
 
 export interface WorkflowPromptTemplateVariables {
-  in: WorkflowTemplateInput;
+  in: object;
 }
 
 export interface ExecutorTemplateVariables {

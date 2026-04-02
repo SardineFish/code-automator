@@ -17,6 +17,7 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
   const config = createServiceConfig();
   config.workspace.enabled = true;
   config.executors.codex.run = "codex -w ${workspace} exec ${prompt}";
+  config.executors.codex.env.SHARED = "executor";
 
   const calls: {
     command?: string;
@@ -31,6 +32,10 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
     prompt: "O'Hara",
     artifacts,
     installationToken: "installation-token",
+    triggerEnv: {
+      SHARED: "trigger",
+      TRIGGER_ONLY: "1"
+    },
     workspaceRepo: {
       async createRunWorkspace() {
         return "/tmp/workspace-1";
@@ -65,6 +70,8 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
   assert.equal(calls.cwd, "/tmp/workspace-1");
   assert.equal(calls.env?.BASE, "1");
   assert.equal(calls.env?.EXECUTOR, "codex");
+  assert.equal(calls.env?.SHARED, "trigger");
+  assert.equal(calls.env?.TRIGGER_ONLY, "1");
   assert.equal(calls.env?.GITHUB_TOKEN, "installation-token");
   assert.equal(calls.timeoutMs, 900000);
   assert.deepEqual(calls.artifacts, artifacts);

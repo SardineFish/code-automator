@@ -11,7 +11,8 @@ export interface ExecuteWorkflowOptions {
   executorName: string;
   prompt: string;
   artifacts: WorkflowRunArtifacts;
-  installationToken: string;
+  installationToken?: string;
+  triggerEnv?: Record<string, string>;
   workspacePath?: string;
   workspaceRepo: WorkspaceRepo;
   processRunner: ProcessRunner;
@@ -35,8 +36,13 @@ export async function executeWorkflow(options: ExecuteWorkflowOptions): Promise<
     const env = {
       ...options.baseEnv,
       ...executor.env,
-      GITHUB_TOKEN: options.installationToken
+      ...options.triggerEnv
     };
+
+    if (options.installationToken) {
+      env.GITHUB_TOKEN = options.installationToken;
+    }
+
     const startedProcess = await options.processRunner.startDetached(command, {
       artifacts: options.artifacts,
       env,
