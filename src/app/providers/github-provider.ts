@@ -29,9 +29,6 @@ import { resolveGitHubProviderConfig } from "./github-config.js";
  *   Emitted for GitHub "issues" events when action === "opened".
  * - issue:command:plan
  * - issue:command:approve
- * - issue:command:go
- * - issue:command:implement
- * - issue:command:code
  *   Emitted for GitHub "issue_comment" events on issues when the comment
  *   starts with a bot mention followed by one of the supported commands.
  * - issue:comment

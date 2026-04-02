@@ -1,6 +1,6 @@
 # Starter Scope
 
-The current starter scope for GitHub Agent Orchestrator is a provider-extensible ingress runtime with a shipped GitHub provider.
+The current starter scope for Coding Automator is a provider-extensible ingress runtime with a shipped GitHub provider.
 
 ## Goals
 
@@ -37,7 +37,7 @@ The shipped GitHub workflows are:
   - `use`: `codex`
   - purpose: make an implementation plan and comment on the issue without writing code
 - `issue-implement`
-  - `on`: `issue:command:approve`, `issue:command:go`, `issue:command:implement`, `issue:command:code`
+  - `on`: `issue:command:approve`
   - `use`: `claude`
   - purpose: implement the approved plan and open a PR
 - `issue-at`
@@ -61,7 +61,7 @@ The GitHub generic issue mention workflow should render a prompt shaped like:
 Check issue ${in.issueId}. Handle the user's request: ${in.content}. Do not write any code.
 ```
 
-The GitHub provider normalizes both `@<bot-handle> /plan` and `@<bot-handle> plan` to `issue:command:plan`. The same rule applies to `approve`, `go`, `implement`, and `code`.
+The GitHub provider normalizes both `@<bot-handle> /plan` and `@<bot-handle> plan` to `issue:command:plan`. The same rule applies to `approve`.
 
 ## Match Precedence
 

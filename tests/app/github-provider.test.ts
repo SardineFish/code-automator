@@ -77,6 +77,23 @@ test("GitHub provider ignores plain issue comments without a leading mention", a
   assert.deepEqual(reactionCalls, []);
 });
 
+test("GitHub provider treats removed issue command aliases as generic mentions", async (t) => {
+  const { commands, reactionCalls, started, url } = await startGitHubApp(t);
+  const response = await signedRequest(
+    url,
+    issueCommentPayload("@github-agent-orchestrator /go"),
+    "issue_comment"
+  );
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Handle /go'"]);
+  assert.deepEqual(started, ["codex exec 'Handle /go'"]);
+  assert.deepEqual(reactionCalls, [
+    "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes"
+  ]);
+});
+
 test("GitHub provider routes the documented workflows through the provider app", async (t) => {
   const { commands, envs, reactionCalls, started, url } = await startGitHubApp(t);
   const scenarios = [

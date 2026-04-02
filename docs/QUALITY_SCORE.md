@@ -1,6 +1,6 @@
 # Quality Score
 
-This file tracks the repo as it moves from the starter scaffold toward GitHub Agent Orchestrator.
+This file tracks the repo as it moves from the starter scaffold toward Coding Automator.
 
 | Area | Current State | Evidence |
 | --- | --- | --- |

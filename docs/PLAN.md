@@ -1,6 +1,6 @@
 # Project Plan
 
-This file defines the implementation order for the whole GitHub Agent Orchestrator project.
+This file defines the implementation order for the whole Coding Automator project.
 
 ## Commit Rule
 
@@ -107,6 +107,12 @@ This file defines the implementation order for the whole GitHub Agent Orchestrat
 - Add provider-owned `gh.redelivery` validation with `false | { intervalSeconds, maxPerRun }` semantics and keep the config parsing inside GitHub startup code rather than the shared loader.
 - Poll recent GitHub App webhook deliveries from `main.ts`, retry unresolved failed delivery GUIDs once per GUID, and persist a small checkpoint beside the tracked run artifacts.
 - Add focused coverage and docs for the redelivery worker, delivery API client, and new operator-facing config.
+
+### Plan 16: Open-source guide and command surface cleanup [done]
+
+- Rewrite `README.md` into an operator-first guide for running Coding Automator against GitHub issues.
+- Remove the legacy startup env fallback so the CLI requires `--config`.
+- Narrow GitHub issue command aliases to `plan` and `approve`, then update docs, fixtures, and regression coverage to match.
 
 ## Definition Of Done For Each Plan
 

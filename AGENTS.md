@@ -26,7 +26,7 @@ Start here before changing code. This file is the stable table of contents for b
 
 ## Current State
 
-- The product target is a YAML-driven workflow automation service called GitHub Agent Orchestrator with a provider-extensible ingress runtime.
+- The product target is a YAML-driven workflow automation service called Coding Automator with a provider-extensible ingress runtime.
 - The starter runtime is implemented in `src/` with shared app routing, provider handlers, trigger submission, workflow selection, detached executor dispatch, persistent workflow tracking, restart recovery, GitHub App installation-token injection, and CI-backed verification.
 - The current documented design is a provider-extensible ingress runtime with ordered workflows such as `issue-plan`, `issue-implement`, `issue-at`, and `pr-review`, and a shipped GitHub provider under `gh`.
 - Workflow routing is first-match-wins. Specific command workflows must appear before generic mention handlers.

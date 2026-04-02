@@ -15,13 +15,13 @@ tracking:
   logFile: workflow-runs.jsonl
 workspace:
   enabled: false
-  baseDir: /var/lib/github-agent-orchestrator/workspaces
+  baseDir: /var/lib/coding-automator/workspaces
   cleanupAfterRun: false
 gh:
   url: /gh-hook
   clientId: your-github-app-client-id
   appId: 123456
-  botHandle: github-agent-orchestrator
+  botHandle: coding-automator
   redelivery:
     intervalSeconds: 300
     maxPerRun: 20
@@ -55,9 +55,6 @@ workflow:
   issue-implement:
     on:
       - issue:command:approve
-      - issue:command:go
-      - issue:command:implement
-      - issue:command:code
     use: claude
     prompt: Check issue ${in.issueId}. Assign the issue to yourself, implement your plan, and open a PR.
   issue-at:
@@ -123,7 +120,7 @@ workflow:
 
 - `in` is a provider-defined plain object.
 - The core runtime does not require shared fields inside `in`.
-- Providers define the `in` object. The current GitHub provider keeps it minimal and emits only `event`, `user`, and when relevant `issueId`, `prId`, `content`, `prReview`, and `command`.
+- Providers define the `in` object. The current GitHub provider keeps it minimal and emits only `event`, `user`, `repo`, and when relevant `issueId`, `prId`, `content`, `prReview`, and `command`.
 - Missing fields still fail fast in templates when referenced.
 
 ## Workspace Rules
@@ -144,6 +141,6 @@ workflow:
 
 ## Runtime Startup
 
-- The service starts with `npm start -- --config /path/to/service.yml` or `GITHUB_AGENT_ORCHESTRATOR_CONFIG=/path/to/service.yml npm start`.
+- The service starts with `npm start -- --config /path/to/service.yml`.
 - The shipped GitHub provider validates `gh.*` and requires `GITHUB_WEBHOOK_SECRET` plus `GITHUB_APP_PRIVATE_KEY_PATH` during startup.
 - When `gh.redelivery` is enabled, `main.ts` starts a second GitHub App polling loop that scans the last 3 days of app webhook deliveries, retries unresolved failures once per delivery GUID, and persists its checkpoint beside the tracked run artifacts.

@@ -49,7 +49,7 @@ export function createServiceConfig(): AppConfig {
       },
       {
         name: "issue-implement",
-        on: ["issue:command:approve", "issue:command:go", "issue:command:implement", "issue:command:code"],
+        on: ["issue:command:approve"],
         use: "claude",
         prompt: "Implement issue ${in.issueId}"
       },

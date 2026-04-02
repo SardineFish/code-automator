@@ -1,10 +1,28 @@
-# GitHub Agent Orchestrator
+# Coding Automator
 
-GitHub Agent Orchestrator is a YAML-driven workflow automation service with a provider-extensible ingress runtime. It currently ships with a GitHub App provider that validates webhook deliveries, applies provider-specific whitelist rules, submits canonical workflow triggers, launches executor commands as detached background runs, persists workflow status to files, and recovers tracking after restart.
+A self-hosted service that turns GitHub issues into pull requests with local coding agents.
 
-## Current Status
+It receives GitHub webhooks, matches them against ordered workflows in YAML, launches executor commands as detached background runs, and tracks those runs on disk so it can recover after restart.
 
-The runtime now uses a provider-extensible ingress app with persistent workflow tracking. `src/app/` registers the current GitHub provider at startup, and the shared app context handles trigger submission, workflow matching, detached execution, and restart reconciliation.
+This repository is run with Coding Automator itself, so the project is dogfooding the issue-to-PR workflow it documents.
+
+## What You Need
+
+- Node.js 20 or newer
+- A GitHub App installed on the repositories you want to automate
+- A public webhook URL that GitHub can reach
+- One or more coding agent CLIs available on the host, such as `codex` or `claude`
+- A writable directory for tracking files and, if enabled, per-run workspaces
+
+## GitHub App Setup
+
+1. Create a GitHub App and set its webhook URL to your service URL plus the configured `gh.url` path, for example `/gh-hook`.
+2. Set a webhook secret and store the GitHub App private key as a PEM file on the host running Coding Automator.
+3. Install the app on the repositories you want the service to handle.
+4. Set `gh.botHandle` to the handle users will mention in issue comments.
+5. Configure `gh.whitelist.user` and `gh.whitelist.repo` so only trusted actors and repositories can trigger runs.
+6. Grant the app the permissions your agents need to read issues, post comments, push branches, and open pull requests.
+7. For the issue-to-PR flow, enable at least the `Issues` and `Issue comments` webhook events.
 
 ## Quick Start
 
@@ -12,8 +30,8 @@ The runtime now uses a provider-extensible ingress app with persistent workflow 
 2. Create `.env` with:
    - `GITHUB_WEBHOOK_SECRET=...`
    - `GITHUB_APP_PRIVATE_KEY_PATH=/absolute/path/to/app.pem`
-3. Create a YAML config file.
-4. Run the service.
+3. Create `service.yml`.
+4. Start the service with an explicit config path.
 
 ```bash
 npm install
@@ -21,9 +39,7 @@ npm run check
 npm start -- --config ./service.yml
 ```
 
-You can also set `GITHUB_AGENT_ORCHESTRATOR_CONFIG=./service.yml` instead of passing `--config`.
-
-## Config Model
+## Minimal Config
 
 ```yaml
 server:
@@ -36,114 +52,89 @@ tracking:
   logFile: workflow-runs.jsonl
 workspace:
   enabled: false
-  baseDir: /var/lib/github-agent-orchestrator/workspaces
+  baseDir: /var/lib/coding-automator/workspaces
   cleanupAfterRun: false
 gh:
   url: /gh-hook
   clientId: your-github-app-client-id
   appId: 123456
-  botHandle: github-agent-orchestrator
-  redelivery:
-    intervalSeconds: 300
-    maxPerRun: 20
+  botHandle: coding-automator
   whitelist:
     user:
       - octocat
     repo:
       - acme/demo
-gitlab:
-  url: /gitlab-hook
-chat-bot:
-  url: /chat
 executors:
   codex:
-    run: /path/to/codex --yolo -w ${workspace} exec ${prompt}
-    timeoutMs: 900000
-    env:
-      FOO: BAR
+    run: /path/to/codex exec ${prompt}
   claude:
-    run: /path/to/claude --yolo ${prompt}
-    timeoutMs: 900000
-    env:
-      FOO: BAR
+    run: /path/to/claude ${prompt}
 workflow:
   issue-plan:
     on:
       - issue:open
       - issue:command:plan
     use: codex
-    prompt: Check issue ${in.issueId}. Make an implementation plan and comment on this issue. Do not write any code.
+    prompt: Check issue ${in.issueId} in ${in.repo}. Write an implementation plan and post it as an issue comment. Do not write code.
   issue-implement:
     on:
       - issue:command:approve
-      - issue:command:go
-      - issue:command:implement
-      - issue:command:code
     use: claude
-    prompt: Check issue ${in.issueId}. Assign the issue to yourself, implement your plan, and open a PR.
+    prompt: Check issue ${in.issueId} in ${in.repo}. Implement the approved plan, push your branch, and open a pull request.
   issue-at:
     on:
       - issue:comment
     use: codex
-    prompt: Check issue ${in.issueId}. Handle the user's request: ${in.content}. Do not write any code.
-  pr-review:
-    on:
-      - pr:comment
-      - pr:review
-    use: codex
-    prompt: Check PR ${in.prId}. You received review input: ${in.content}.
+    prompt: Check issue ${in.issueId} in ${in.repo}. Reply to the user's request: ${in.content}. Do not write code.
 ```
 
-Relative `tracking` paths are resolved relative to the YAML config file location.
+Relative `tracking` paths resolve from the YAML file location. The config loader preserves additional top-level provider sections, but the shipped startup wiring currently registers only `gh`.
 
-The config loader preserves additional top-level provider sections, but the shipped startup wiring currently registers only the `gh` provider.
+## Issue Flow
+
+- Opening an issue or commenting `@<bot-handle> /plan` triggers the planning workflow.
+- Commenting `@<bot-handle> /approve` triggers the implementation workflow.
+- Other issue comments that mention the bot fall through to the generic issue reply workflow.
+- Workflow matching is first-match-wins, so put command-specific workflows before the generic issue mention workflow.
+
+## Optional Redelivery Polling
+
 `gh.redelivery` is provider-owned and defaults to `false`. When enabled, the service polls recent GitHub App webhook deliveries, retries unresolved failed delivery GUIDs once per GUID, and caps each scan at `maxPerRun` redelivery requests. On GitHub.com, only deliveries from the last 3 days are eligible for redelivery.
 
-## Workflow Model
+```yaml
+gh:
+  ...
+  redelivery:
+    intervalSeconds: 300
+    maxPerRun: 20
+```
 
-1. `src/app/` registers provider handlers against provider-owned routes. The current startup path registers the GitHub provider at `gh.url`.
-2. A provider receives the request, validates provider-specific policy, and calls `context.trigger(name, { in, env })` one or more times.
-3. `context.submit()` evaluates workflows in YAML declaration order and stops at the first match.
-4. The selected workflow renders a prompt from the matched trigger's `${in.*}` fields.
-5. The service creates a queued workflow record, launches the executor as a detached background process, and persists the PID plus artifact paths.
-6. A reconciliation loop updates the state file and append-only run log when detached runs complete. On restart, the service reloads the state file and recovers run status from saved PIDs and result files.
+The redelivery worker stores its checkpoint next to the tracked run artifacts under `tracking.stateFile`.
 
-## Template Variables
+## Configuration Notes
 
 - Workflow prompts may use `${in.*}` variables.
-- `in` is provider-defined. The core runtime does not require shared fields inside it.
-- The current GitHub provider keeps `in` intentionally small. It emits `event`, `user`, and when relevant `issueId`, `prId`, `content`, `prReview`, and `command`.
 - Executor commands may use `${prompt}` and `${workspace}`.
 - `${prompt}` and `${workspace}` are shell-escaped before command execution.
-- Missing or unsupported template variables fail fast.
+- The current GitHub provider keeps `in` intentionally small. It emits `event`, `user`, `repo`, and when relevant `issueId`, `content`, and `command`.
+- The executor launch environment is merged as `base process env -> executor env -> trigger env`.
+- The shipped GitHub provider injects `GH_TOKEN` for matched runs so your agent can call GitHub as the app installation.
+- When `workspace.enabled` is `false`, `${workspace}` resolves to an empty string.
 
-## Trigger Environment
+## Operations
 
-- Providers may attach per-request environment variables to the matched trigger through `context.trigger(..., { env })`.
-- The executor launch environment is merged as base process env, then executor static env, then trigger env.
-- The shipped GitHub provider injects `GH_TOKEN` for executor runs that need GitHub App access.
-
-## Persistent Tracking
-
-- `tracking.stateFile` stores the current non-terminal workflow runs.
-- `tracking.logFile` is an append-only JSONL log of terminal workflow outcomes.
+- Runs are launched as detached background processes.
+- `tracking.stateFile` stores non-terminal runs, and `tracking.logFile` stores append-only terminal outcomes.
 - Per-run wrapper, PID, result, stdout, and stderr files are stored next to the state file under a derived run-artifacts directory.
-- `logging.level` controls human-readable runtime logs. `info` logs trigger evaluation, workflow selection, and execution outcomes. `debug` additionally logs inbound HTTP request metadata plus clipped executor command/stdout previews.
-- The service does not need graceful draining to preserve workflow status. It can stop immediately and recover tracking on restart from the persisted state and detached process metadata.
-
-## Production Bootstrap
-
-- Set `GITHUB_WEBHOOK_SECRET` and `GITHUB_APP_PRIVATE_KEY_PATH` for the shipped GitHub provider.
-- Start with `npm start -- --config /path/to/service.yml`.
-- Configure each provider's inbound URL path inside its provider section, for example `gh.url: /gh-hook`.
-- Optional: enable `gh.redelivery` to start a background GitHub App delivery poller. The worker stores its checkpoint next to the tracked run artifacts under `tracking.stateFile`.
+- The service can stop immediately and recover workflow state on restart from persisted tracking metadata.
+- If `gh.redelivery` is enabled, a second background worker scans recent GitHub App deliveries and requests redelivery for unresolved failures.
+- `logging.level: debug` adds inbound request metadata and clipped executor command and stdout previews to runtime logs.
 - Executors are command templates only; containerization, sandboxing, and repo checkout strategy stay operator-defined.
 
-## Repository Guide
+## Further Reading
 
-- `AGENTS.md` is the agent entry point and repo table of contents.
+- `AGENTS.md` is the repo table of contents for humans and agents.
 - `ARCHITECTURE.md` defines the layer model.
 - `docs/product-specs/starter-scope.md` captures the shipped starter scope.
-- `docs/design-docs/workflow-config.md` defines the YAML contract and `in` variable model.
-- `scripts/` contains the harness checks.
+- `docs/design-docs/workflow-config.md` documents the full YAML contract.
 - `.github/workflows/check.yml` runs `npm run check` in CI.

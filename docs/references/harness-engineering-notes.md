@@ -2,7 +2,7 @@
 
 Source article: https://openai.com/index/harness-engineering/
 
-This repository keeps the harness-engineering structure described in the article while it evolves into GitHub Agent Orchestrator.
+This repository keeps the harness-engineering structure described in the article while it evolves into Coding Automator.
 
 1. Treat the repository as the durable system of record for an agent.
 2. Use a clear root table of contents so an agent knows where stable knowledge lives.
