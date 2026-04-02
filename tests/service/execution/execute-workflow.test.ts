@@ -72,7 +72,7 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
   assert.equal(calls.env?.EXECUTOR, "codex");
   assert.equal(calls.env?.SHARED, "trigger");
   assert.equal(calls.env?.TRIGGER_ONLY, "1");
-  assert.equal(calls.env?.GITHUB_TOKEN, "installation-token");
+  assert.equal(calls.env?.GH_TOKEN, "installation-token");
   assert.equal(calls.timeoutMs, 900000);
   assert.deepEqual(calls.artifacts, artifacts);
 });

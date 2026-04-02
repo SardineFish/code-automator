@@ -1,3 +1,5 @@
 #!/bin/sh
 
-echo "Hello World!"
+echo "Exec:" $1
+
+echo $GH_TOKEN

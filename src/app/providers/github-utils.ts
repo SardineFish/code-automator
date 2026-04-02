@@ -149,6 +149,46 @@ export function respond(response: ServerResponse, statusCode: number, body: stri
   response.end(body);
 }
 
+export async function addCommentReaction(options: {
+  repoFullName: string;
+  subjectId: number;
+  reaction: "eyes";
+  token: string;
+  kind: "issue" | "issue_comment" | "pull_request_review_comment";
+}): Promise<void> {
+  const [owner, repo] = options.repoFullName.split("/");
+
+  if (!owner || !repo) {
+    throw new Error(`Invalid repository name '${options.repoFullName}'.`);
+  }
+
+  const endpoint =
+    options.kind === "issue"
+      ? `https://api.github.com/repos/${owner}/${repo}/issues/${options.subjectId}/reactions`
+      : options.kind === "issue_comment"
+        ? `https://api.github.com/repos/${owner}/${repo}/issues/comments/${options.subjectId}/reactions`
+        : `https://api.github.com/repos/${owner}/${repo}/pulls/comments/${options.subjectId}/reactions`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${options.token}`,
+      "Content-Type": "application/json",
+      "User-Agent": "github-agent-orchestrator",
+      "X-GitHub-Api-Version": "2022-11-28"
+    },
+    body: JSON.stringify({ content: options.reaction })
+  });
+
+  if (response.status === 200 || response.status === 201) {
+    return;
+  }
+
+  const body = await response.text();
+  throw new Error(`GitHub reaction request failed: ${response.status} ${body}`);
+}
+
 export interface InstallationTokenProvider {
   createInstallationToken(clientId: string, installationId: number): Promise<string>;
 }

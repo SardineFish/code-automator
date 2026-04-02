@@ -117,7 +117,7 @@ The config loader preserves additional top-level provider sections, but the ship
 
 - Providers may attach per-request environment variables to the matched trigger through `context.trigger(..., { env })`.
 - The executor launch environment is merged as base process env, then executor static env, then trigger env.
-- The shipped GitHub provider injects `GITHUB_TOKEN` for executor runs that need GitHub App access.
+- The shipped GitHub provider injects `GH_TOKEN` for executor runs that need GitHub App access.
 
 ## Persistent Tracking
 

@@ -11,6 +11,7 @@ import { githubProvider } from "../../src/app/providers/github-provider.js";
 import {
   issueCommentPayload,
   issueOpenedPayload,
+  reviewCommentPayload,
   reviewPayload
 } from "../fixtures/github-webhooks.js";
 import { createNoOpLogSink } from "../fixtures/log-sink.js";
@@ -58,24 +59,26 @@ test("GitHub provider rejects invalid signatures", async (t) => {
 
 test("GitHub provider ignores whitelist rejections without launching workflows", async (t) => {
   const payload = issueCommentPayload("@github-agent-orchestrator /plan", { senderLogin: "intruder" });
-  const { started, url } = await startGitHubApp(t);
+  const { reactionCalls, started, url } = await startGitHubApp(t);
 
   const response = await signedRequest(url, payload, "issue_comment");
 
   assert.equal(response.status, 202);
   assert.deepEqual(started, []);
+  assert.deepEqual(reactionCalls, []);
 });
 
 test("GitHub provider ignores plain issue comments without a leading mention", async (t) => {
-  const { started, url } = await startGitHubApp(t);
+  const { reactionCalls, started, url } = await startGitHubApp(t);
   const response = await signedRequest(url, issueCommentPayload("please plan this"), "issue_comment");
 
   assert.equal(response.status, 202);
   assert.deepEqual(started, []);
+  assert.deepEqual(reactionCalls, []);
 });
 
 test("GitHub provider routes the documented workflows through the provider app", async (t) => {
-  const { commands, envs, started, url } = await startGitHubApp(t);
+  const { commands, envs, reactionCalls, started, url } = await startGitHubApp(t);
   const scenarios = [
     {
       name: "issue-plan",
@@ -106,6 +109,12 @@ test("GitHub provider routes the documented workflows through the provider app",
       eventName: "pull_request_review",
       payload: reviewPayload("", "changes_requested"),
       expectedCommand: "codex exec 'Review PR 8: request-changes'"
+    },
+    {
+      name: "pr-review-comment",
+      eventName: "pull_request_review_comment",
+      payload: reviewCommentPayload("needs work"),
+      expectedCommand: "codex exec 'Review PR 8: needs work'"
     }
   ];
 
@@ -117,7 +126,14 @@ test("GitHub provider routes the documented workflows through the provider app",
   await waitForCondition(() => started.length === scenarios.length);
   assert.deepEqual(commands, scenarios.map((scenario) => scenario.expectedCommand));
   assert.deepEqual(started, scenarios.map((scenario) => scenario.expectedCommand));
-  assert.ok(envs.every((env) => env.GITHUB_TOKEN === "installation-token"));
+  assert.ok(envs.every((env) => env.GH_TOKEN === "installation-token"));
+  assert.deepEqual(reactionCalls, [
+    "POST https://api.github.com/repos/acme/demo/issues/7/reactions eyes",
+    "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes",
+    "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes",
+    "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes",
+    "POST https://api.github.com/repos/acme/demo/pulls/comments/101/reactions eyes"
+  ]);
 });
 
 async function startGitHubApp(t: TestContext) {
@@ -136,6 +152,7 @@ async function startGitHubApp(t: TestContext) {
   const env = await createGitHubAppEnv();
   const commands: string[] = [];
   const envs: NodeJS.ProcessEnv[] = [];
+  const reactionCalls: string[] = [];
   const started: string[] = [];
   let runCount = 0;
   const logSink = createNoOpLogSink();
@@ -152,6 +169,14 @@ async function startGitHubApp(t: TestContext) {
     if (url.startsWith("https://api.github.com/app/installations/")) {
       return new Response(JSON.stringify({ token: "installation-token" }), {
         status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    if (url.includes("/reactions")) {
+      reactionCalls.push(`${init?.method ?? "GET"} ${url} ${JSON.parse(String(init?.body)).content}`);
+      return new Response(JSON.stringify({ id: 1, content: "eyes" }), {
+        status: 201,
         headers: { "content-type": "application/json" }
       });
     }
@@ -231,6 +256,7 @@ async function startGitHubApp(t: TestContext) {
     server,
     commands,
     envs,
+    reactionCalls,
     started,
     url: `http://127.0.0.1:${address.port}${github.url}`
   };

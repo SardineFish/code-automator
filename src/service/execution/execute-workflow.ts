@@ -40,7 +40,7 @@ export async function executeWorkflow(options: ExecuteWorkflowOptions): Promise<
     };
 
     if (options.installationToken) {
-      env.GITHUB_TOKEN = options.installationToken;
+      env.GH_TOKEN = options.installationToken;
     }
 
     const startedProcess = await options.processRunner.startDetached(command, {
