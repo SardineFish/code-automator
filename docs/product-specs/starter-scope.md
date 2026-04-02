@@ -14,7 +14,7 @@ The current starter scope for Coding Automator is a provider-extensible ingress 
 - Launch the configured executor command with `${prompt}`, `${workspace}`, executor-specific environment variables, optional executor timeouts, and any provider-supplied request-scoped environment variables.
 - Persist workflow run state to a JSON file and append terminal results to a JSONL log.
 - Recover tracked workflow status on restart from saved PIDs and detached-process result files.
-- Support service-side workspace settings with `workspace.enabled`, `workspace.baseDir`, and `workspace.cleanupAfterRun`.
+- Support service-side workspace defaults with `workspace.enabled`, `workspace.baseDir`, and `workspace.cleanupAfterRun`, plus per-executor `executors.<name>.workspace` overrides.
 - Keep GitHub-specific auth, signature verification, and whitelist behavior inside the GitHub provider rather than the core app.
 - Optionally poll GitHub App webhook deliveries and request one redelivery per unresolved failed delivery GUID within GitHub's 3-day redelivery window.
 
@@ -23,7 +23,7 @@ The current starter scope for Coding Automator is a provider-extensible ingress 
 - No built-in Docker runtime assumption. Executors may call scripts that use Docker, but the service contract stays command-template-based.
 - No repo-stored workflow configuration.
 - No multi-workflow fan-out for a single request. First match only.
-- No auto-created workspace when `workspace.enabled` is `false`.
+- No auto-created workspace when the selected executor resolves to workspace allocation disabled.
 - No system-wide provider schema registry in the core config loader. Providers own validation for their top-level config sections.
 - No required trigger prefix convention in code. Providers may share or prefix trigger names by documentation and team policy.
 - No shipped GitLab or chat-bot provider implementation yet. Extra provider config sections are preserved, but startup currently registers only GitHub.
@@ -74,5 +74,6 @@ The GitHub provider normalizes both `@<bot-handle> /plan` and `@<bot-handle> pla
 - `workspace.enabled`: `false`
 - `workspace.baseDir`: operator-defined
 - `workspace.cleanupAfterRun`: `false`
+- `executors.<name>.workspace`: omitted by default
 
-When workspaces are enabled, each execution creates a fresh subdirectory under `workspace.baseDir`. When disabled, the executor runs without an auto-created workspace and `${workspace}` resolves to an empty string.
+When `executors.<name>.workspace` is omitted, the executor inherits `workspace.enabled` and `workspace.baseDir`. Setting it to `false` disables workspace allocation for that executor, setting it to `true` forces allocation under `workspace.baseDir`, and setting it to a string forces allocation under that string path. When allocation is disabled, the executor runs without an auto-created workspace and `${workspace}` resolves to an empty string.

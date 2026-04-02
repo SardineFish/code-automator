@@ -152,6 +152,76 @@ test("processTriggerSubmission ignores empty trigger submissions", async () => {
   assert.equal(result.reason, "no_triggers_submitted");
 });
 
+test("processTriggerSubmission prepares an executor-specific workspace before launch", async () => {
+  const config = createServiceConfig();
+  config.executors.codex.run = "codex -w ${workspace} exec ${prompt}";
+  config.executors.codex.workspace = "/tmp/codex-parent";
+
+  const queuedUpdates: string[] = [];
+  const startedCwds: string[] = [];
+  const running: string[] = [];
+  const result = await processTriggerSubmission({
+    config,
+    source: "/gh-hook",
+    triggers: [
+      {
+        name: "issue:command:plan",
+        input: { event: "issue:command:plan", issueId: "7", user: "octocat" },
+        env: {}
+      }
+    ],
+    processRunner: {
+      async run() {
+        throw new Error("should not be called");
+      },
+      async startDetached(command, options) {
+        startedCwds.push(options.cwd);
+        running.push(command);
+        return { pid: 5151, startedAt: "2026-04-02T00:00:00.000Z" };
+      },
+      isProcessRunning() {
+        return true;
+      },
+      async readDetachedResult() {
+        return null;
+      }
+    },
+    workspaceRepo: {
+      async createRunWorkspace(baseDir) {
+        assert.equal(baseDir, "/tmp/codex-parent");
+        return "/tmp/codex-parent/run-1";
+      },
+      async removeWorkspace() {}
+    },
+    workflowTracker: {
+      async initialize() {},
+      async createQueuedRun() {
+        return createQueuedRunRecord("run-2");
+      },
+      async updateQueuedRun(runId, details) {
+        queuedUpdates.push(`${runId}:${details.workspacePath}`);
+        return {} as never;
+      },
+      async markRunning(runId: string, details: { command: string }) {
+        running.push(`${runId}:${details.command}`);
+        return {} as never;
+      },
+      async markTerminal() {
+        throw new Error("should not be called");
+      },
+      async reconcileActiveRuns() {}
+    },
+    logSink: createNoOpLogSink()
+  });
+
+  assert.equal(result.status, "matched");
+  await waitForCondition(() => running.length === 2);
+  assert.deepEqual(queuedUpdates, ["run-2:/tmp/codex-parent/run-1"]);
+  assert.deepEqual(startedCwds, ["/tmp/codex-parent/run-1"]);
+  assert.equal(running[0], "codex -w '/tmp/codex-parent/run-1' exec 'Plan issue 7'");
+  assert.equal(running[1], "run-2:codex -w '/tmp/codex-parent/run-1' exec 'Plan issue 7'");
+});
+
 async function waitForCondition(check: () => boolean, timeoutMs = 1000): Promise<void> {
   const startedAt = Date.now();
 

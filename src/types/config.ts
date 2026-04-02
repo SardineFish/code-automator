@@ -12,6 +12,8 @@ export interface WorkspaceConfig {
   cleanupAfterRun: boolean;
 }
 
+export type ExecutorWorkspaceSetting = boolean | string;
+
 export interface TrackingConfig {
   stateFile: string;
   logFile: string;
@@ -44,6 +46,7 @@ export interface ExecutorConfig {
   run: string;
   env: Record<string, string>;
   timeoutMs?: number;
+  workspace?: ExecutorWorkspaceSetting;
 }
 
 export interface WorkflowConfigEntry {

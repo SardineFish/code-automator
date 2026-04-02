@@ -357,3 +357,104 @@ test("fileWorkflowTracker isolates malformed result files during reconciliation"
     `${goodRun.runId}:succeeded`
   ]);
 });
+
+test("fileWorkflowTracker only cleans up runs with real workspace paths", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "gao-reconcile-cleanup-"));
+  const tracker = createFileWorkflowTracker(
+    {
+      stateFile: path.join(dir, "state.json"),
+      logFile: path.join(dir, "runs.jsonl")
+    },
+    fileWorkflowTrackerRepo,
+    createNoOpLogSink()
+  );
+
+  await tracker.initialize();
+  const workspaceRun = await tracker.createQueuedRun(
+    {
+      deliveryId: "delivery-1",
+      eventName: "issues",
+      workflowName: "issue-plan",
+      matchedTrigger: "issue:open",
+      executorName: "codex",
+      repoFullName: "acme/demo",
+      actorLogin: "octocat",
+      installationId: 42
+    },
+    "/tmp/workspace-1"
+  );
+  const noWorkspaceRun = await tracker.createQueuedRun(
+    {
+      deliveryId: "delivery-2",
+      eventName: "issues",
+      workflowName: "issue-plan",
+      matchedTrigger: "issue:open",
+      executorName: "codex",
+      repoFullName: "acme/demo",
+      actorLogin: "octocat",
+      installationId: 42
+    },
+    ""
+  );
+
+  await tracker.markRunning(workspaceRun.runId, {
+    pid: 1234,
+    command: "codex exec workspace",
+    startedAt: "2026-04-02T00:00:00.000Z",
+    workspacePath: "/tmp/workspace-1"
+  });
+  await tracker.markRunning(noWorkspaceRun.runId, {
+    pid: 5678,
+    command: "codex exec no-workspace",
+    startedAt: "2026-04-02T00:00:00.000Z",
+    workspacePath: ""
+  });
+
+  const removedWorkspaces: string[] = [];
+  await tracker.reconcileActiveRuns(
+    {
+      async run() {
+        throw new Error("should not be called");
+      },
+      async startDetached() {
+        throw new Error("should not be called");
+      },
+      isProcessRunning() {
+        return false;
+      },
+      async readDetachedResult(resultFilePath) {
+        if (
+          resultFilePath === workspaceRun.artifacts.resultFilePath ||
+          resultFilePath === noWorkspaceRun.artifacts.resultFilePath
+        ) {
+          return {
+            pid: resultFilePath === workspaceRun.artifacts.resultFilePath ? 1234 : 5678,
+            exitCode: 0,
+            signal: null,
+            stdout: "",
+            stderr: "",
+            timedOut: false,
+            completedAt: "2026-04-02T00:00:05.000Z"
+          };
+        }
+
+        return null;
+      }
+    },
+    {
+      async createRunWorkspace() {
+        throw new Error("should not be called");
+      },
+      async removeWorkspace(workspacePath) {
+        removedWorkspaces.push(workspacePath);
+      }
+    },
+    {
+      enabled: false,
+      baseDir: "/tmp",
+      cleanupAfterRun: true
+    }
+  );
+
+  assert.deepEqual(removedWorkspaces, ["/tmp/workspace-1"]);
+});

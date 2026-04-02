@@ -52,6 +52,26 @@ export function readOptionalInteger(node: unknown, path: string): number | undef
   return readInteger(node, path);
 }
 
+export function readOptionalBooleanOrString(node: unknown, path: string): boolean | string | undefined {
+  if (!node) {
+    return undefined;
+  }
+
+  if (!isScalar(node)) {
+    throw new ConfigError(path, "Expected a boolean or non-empty string.");
+  }
+
+  if (typeof node.value === "boolean") {
+    return node.value;
+  }
+
+  if (typeof node.value === "string" && node.value.trim() !== "") {
+    return node.value;
+  }
+
+  throw new ConfigError(path, "Expected a boolean or non-empty string.");
+}
+
 export function readStringSequence(node: unknown, path: string): string[] {
   if (!isSeq(node)) {
     throw new ConfigError(path, "Expected a sequence.");

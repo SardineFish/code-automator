@@ -17,6 +17,7 @@ import {
   expectMap,
   readBoolean,
   readInteger,
+  readOptionalBooleanOrString,
   readOptionalInteger,
   readOptionalEnvMap,
   readRequiredNode,
@@ -126,6 +127,10 @@ function readExecutors(root: ReturnType<typeof expectMap>): Record<string, Execu
     const definition = expectMap(item.value, executorPath);
     const run = readString(readRequiredNode(definition, "run", `${executorPath}.run`), `${executorPath}.run`);
     const env = readOptionalEnvMap(definition.get("env", true), `${executorPath}.env`);
+    const workspace = readOptionalBooleanOrString(
+      definition.get("workspace", true),
+      `${executorPath}.workspace`
+    );
     const timeoutMs = readOptionalInteger(
       definition.get("timeoutMs", true),
       `${executorPath}.timeoutMs`
@@ -134,7 +139,7 @@ function readExecutors(root: ReturnType<typeof expectMap>): Record<string, Execu
     if (timeoutMs !== undefined && timeoutMs < 1) {
       throw new ConfigError(`${executorPath}.timeoutMs`, "Expected an integer greater than 0.");
     }
-    result[name] = { run, env, timeoutMs };
+    result[name] = { run, env, timeoutMs, workspace };
   }
   if (Object.keys(result).length === 0) {
     throw new ConfigError("executors", "Expected at least one executor.");

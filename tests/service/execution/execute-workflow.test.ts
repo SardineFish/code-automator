@@ -15,9 +15,10 @@ const artifacts = {
 
 test("executeWorkflow shell-escapes prompt and injects the installation token", async () => {
   const config = createServiceConfig();
-  config.workspace.enabled = true;
+  config.workspace.enabled = false;
   config.executors.codex.run = "codex -w ${workspace} exec ${prompt}";
   config.executors.codex.env.SHARED = "executor";
+  config.executors.codex.workspace = "/tmp/custom-parent";
 
   const calls: {
     command?: string;
@@ -25,6 +26,7 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
     cwd?: string;
     timeoutMs?: number;
     artifacts?: typeof artifacts;
+    workspaceBaseDir?: string;
   } = {};
   const result = await executeWorkflow({
     config,
@@ -37,7 +39,8 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
       TRIGGER_ONLY: "1"
     },
     workspaceRepo: {
-      async createRunWorkspace() {
+      async createRunWorkspace(baseDir) {
+        calls.workspaceBaseDir = baseDir;
         return "/tmp/workspace-1";
       },
       async removeWorkspace() {}
@@ -67,6 +70,7 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
   assert.equal(result.status, "running");
   assert.equal(result.pid, 4242);
   assert.equal(result.command, "codex -w '/tmp/workspace-1' exec 'O'\"'\"'Hara'");
+  assert.equal(calls.workspaceBaseDir, "/tmp/custom-parent");
   assert.equal(calls.cwd, "/tmp/workspace-1");
   assert.equal(calls.env?.BASE, "1");
   assert.equal(calls.env?.EXECUTOR, "codex");
@@ -75,6 +79,47 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
   assert.equal(calls.env?.GH_TOKEN, "installation-token");
   assert.equal(calls.timeoutMs, 900000);
   assert.deepEqual(calls.artifacts, artifacts);
+});
+
+test("executeWorkflow skips workspace creation when the executor disables it", async () => {
+  const config = createServiceConfig();
+  config.workspace.enabled = true;
+  config.executors.codex.workspace = false;
+
+  let createdWorkspace = false;
+  let cwd: string | undefined;
+  const result = await executeWorkflow({
+    config,
+    executorName: "codex",
+    prompt: "noop",
+    artifacts,
+    workspaceRepo: {
+      async createRunWorkspace() {
+        createdWorkspace = true;
+        return "/tmp/workspace-should-not-exist";
+      },
+      async removeWorkspace() {}
+    },
+    processRunner: {
+      async run() {
+        throw new Error("should not be called");
+      },
+      async startDetached(_command, options) {
+        cwd = options.cwd;
+        return { pid: 4343, startedAt: "2026-04-02T00:00:00.000Z" };
+      },
+      isProcessRunning() {
+        return true;
+      },
+      async readDetachedResult() {
+        return null;
+      }
+    }
+  });
+
+  assert.equal(createdWorkspace, false);
+  assert.equal(result.workspacePath, "");
+  assert.equal(cwd, process.cwd());
 });
 
 test("executeWorkflow throws for unknown executors", async () => {
@@ -117,7 +162,14 @@ test("executeWorkflow reports workspace creation failures", async () => {
       executeWorkflow({
         config: {
           ...createServiceConfig(),
-          workspace: { enabled: true, baseDir: "/tmp", cleanupAfterRun: true }
+          workspace: { enabled: false, baseDir: "/tmp", cleanupAfterRun: true },
+          executors: {
+            ...createServiceConfig().executors,
+            codex: {
+              ...createServiceConfig().executors.codex,
+              workspace: true
+            }
+          }
         },
         executorName: "codex",
         prompt: "noop",
@@ -154,7 +206,14 @@ test("executeWorkflow reports cleanup failures after launch failure", async () =
       executeWorkflow({
         config: {
           ...createServiceConfig(),
-          workspace: { enabled: true, baseDir: "/tmp", cleanupAfterRun: true }
+          workspace: { enabled: false, baseDir: "/tmp", cleanupAfterRun: true },
+          executors: {
+            ...createServiceConfig().executors,
+            codex: {
+              ...createServiceConfig().executors.codex,
+              workspace: true
+            }
+          }
         },
         executorName: "codex",
         prompt: "noop",
