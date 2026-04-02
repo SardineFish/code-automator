@@ -12,6 +12,9 @@ server:
   host: 0.0.0.0
   port: 3000
   webhookPath: /webhooks/github
+tracking:
+  stateFile: workflow-state.json
+  logFile: workflow-runs.jsonl
 workspace:
   enabled: false
   baseDir: /var/lib/github-agent-orchestrator/workspaces
@@ -66,6 +69,7 @@ workflow:
 - `appId`: GitHub App numeric ID metadata.
 - `botHandle`: mention target used for trigger normalization.
 - `server`: listener host, port, and webhook path.
+- `tracking`: persistent workflow state and append-only results log paths. Relative paths resolve from the YAML config file directory.
 - `workspace`: workspace lifecycle policy for executor runs.
 - `whitelist`: the allowed GitHub users and repositories.
 - `executors`: named command templates plus static environment variables.
@@ -95,6 +99,7 @@ workflow:
 - `${prompt}` is the rendered workflow prompt.
 - `${workspace}` is the per-run workspace path when workspace creation is enabled, otherwise an empty string.
 - Executor `env` entries are added to the child process environment for that run.
+- The service injects a per-run GitHub App installation access token as `GITHUB_TOKEN`.
 - Executor `${prompt}` and `${workspace}` values are shell-escaped before the command runs through `/bin/sh -lc`.
 - Missing or unsupported template variables throw an error.
 - `null` template values render as an empty string.
@@ -131,10 +136,18 @@ Aliases are convenience fields derived from structured context, and missing fiel
 
 - When `workspace.enabled` is `true`, the service creates a fresh subdirectory under `workspace.baseDir` for each execution.
 - When `workspace.enabled` is `false`, the service does not create a workspace automatically.
-- When `workspace.cleanupAfterRun` is `true`, the run directory is removed after execution completes.
+- When `workspace.cleanupAfterRun` is `true`, the run directory is removed when reconciliation observes that the detached run completed.
 - Command templates that reference `${workspace}` should be wrapped so they behave correctly when the value is empty.
+
+## Tracking Rules
+
+- Workflow runs are launched as detached background processes.
+- `tracking.stateFile` stores non-terminal runs with saved PID, command, workspace path, and artifact file paths.
+- `tracking.logFile` appends terminal workflow outcomes as JSON lines.
+- The service reconciles saved runs on startup and during normal operation by checking the saved PID and reading the detached process result file.
 
 ## Runtime Startup
 
 - `GITHUB_WEBHOOK_SECRET` is loaded from `.env` or the ambient environment.
+- `GITHUB_APP_PRIVATE_KEY_PATH` points to the GitHub App PEM private key used to mint installation access tokens.
 - The service starts with `npm start -- --config /path/to/service.yml` or `GITHUB_AGENT_ORCHESTRATOR_CONFIG=/path/to/service.yml npm start`.

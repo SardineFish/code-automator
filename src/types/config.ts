@@ -12,6 +12,11 @@ export interface WorkspaceConfig {
   cleanupAfterRun: boolean;
 }
 
+export interface TrackingConfig {
+  stateFile: string;
+  logFile: string;
+}
+
 export interface WhitelistConfig {
   user: string[];
   repo: string[];
@@ -39,6 +44,7 @@ export interface RawServiceConfig {
   botHandle: string;
   server: ServerConfig;
   workspace: WorkspaceConfig;
+  tracking: TrackingConfig;
   whitelist: WhitelistConfig;
   executors: Record<string, ExecutorConfig>;
   workflow: Record<string, WorkflowConfigEntry>;
@@ -50,6 +56,7 @@ export interface ServiceConfig {
   botHandle: string;
   server: ServerConfig;
   workspace: WorkspaceConfig;
+  tracking: TrackingConfig;
   whitelist: WhitelistConfig;
   executors: Record<string, ExecutorConfig>;
   workflow: WorkflowDefinition[];

@@ -113,20 +113,17 @@ test("createWebhookServer rejects oversized payloads", async () => {
   await once(server, "close");
 });
 
-test("createWebhookServer accepts valid deliveries and dispatches asynchronously", async () => {
+test("createWebhookServer waits for delivery handling before responding", async () => {
   let deliveredEventName = "";
-  let resolveDelivery = () => {};
-  const awaited = new Promise<void>((resolve) => {
-    resolveDelivery = resolve;
-  });
   const { server, url } = await startTestServer({
     onDelivery: async (delivery) => {
       deliveredEventName = delivery.eventName;
-      resolveDelivery();
+      await new Promise((resolve) => setTimeout(resolve, 20));
       return { status: "matched", reason: "executed" };
     }
   });
 
+  const startedAt = Date.now();
   const response = await signedRequest(
     url,
     issueCommentPayload("@github-agent-orchestrator /plan"),
@@ -134,7 +131,7 @@ test("createWebhookServer accepts valid deliveries and dispatches asynchronously
   );
 
   assert.equal(response.status, 202);
-  await awaited;
+  assert.ok(Date.now() - startedAt >= 20);
   assert.equal(deliveredEventName, "issue_comment");
   server.close();
   await once(server, "close");

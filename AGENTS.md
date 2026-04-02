@@ -27,7 +27,7 @@ Start here before changing code. This file is the stable table of contents for b
 ## Current State
 
 - The product target is a GitHub App webhook automation service called GitHub Agent Orchestrator.
-- The starter runtime is implemented in `src/` with config loading, webhook intake, trigger normalization, workflow selection, executor dispatch, and CI-backed verification.
+- The starter runtime is implemented in `src/` with config loading, webhook intake, trigger normalization, workflow selection, detached executor dispatch, persistent workflow tracking, restart recovery, GitHub App installation-token injection, and CI-backed verification.
 - The current documented design is a YAML-driven workflow engine with ordered workflows such as `issue-plan`, `issue-implement`, `issue-at`, and `pr-review`.
 - Workflow routing is first-match-wins. Specific command workflows must appear before generic mention handlers.
 

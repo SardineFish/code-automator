@@ -10,6 +10,10 @@ export function createServiceConfig(): ServiceConfig {
       port: 3000,
       webhookPath: "/webhooks/github"
     },
+    tracking: {
+      stateFile: "/tmp/github-agent-orchestrator/state.json",
+      logFile: "/tmp/github-agent-orchestrator/runs.jsonl"
+    },
     workspace: {
       enabled: false,
       baseDir: "/tmp/github-agent-orchestrator",

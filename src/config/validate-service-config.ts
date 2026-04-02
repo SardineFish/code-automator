@@ -1,9 +1,11 @@
+import path from "node:path";
 import { type Document, isMap } from "yaml";
 
 import type {
   ExecutorConfig,
   ServerConfig,
   ServiceConfig,
+  TrackingConfig,
   WhitelistConfig,
   WorkflowDefinition,
   WorkspaceConfig
@@ -21,18 +23,22 @@ import {
   readStringSequence
 } from "./yaml-node-readers.js";
 
-export function validateServiceConfigDocument(document: Document.Parsed): ServiceConfig {
+export function validateServiceConfigDocument(
+  document: Document.Parsed,
+  baseDir: string
+): ServiceConfig {
   const root = expectMap(document.contents, "root");
   const clientId = readString(readRequiredNode(root, "clientId", "clientId"), "clientId");
   const appId = readInteger(readRequiredNode(root, "appId", "appId"), "appId");
   const botHandle = readString(readRequiredNode(root, "botHandle", "botHandle"), "botHandle");
   const server = readServerConfig(root);
   const workspace = readWorkspaceConfig(root);
+  const tracking = readTrackingConfig(root, baseDir);
   const whitelist = readWhitelistConfig(root);
   const executors = readExecutors(root);
   const workflow = readWorkflow(root, new Set(Object.keys(executors)));
 
-  return { clientId, appId, botHandle, server, workspace, whitelist, executors, workflow };
+  return { clientId, appId, botHandle, server, workspace, tracking, whitelist, executors, workflow };
 }
 
 function readServerConfig(root: ReturnType<typeof expectMap>): ServerConfig {
@@ -61,6 +67,21 @@ function readWorkspaceConfig(root: ReturnType<typeof expectMap>): WorkspaceConfi
     cleanupAfterRun: readBoolean(
       readRequiredNode(workspace, "cleanupAfterRun", "workspace.cleanupAfterRun"),
       "workspace.cleanupAfterRun"
+    )
+  };
+}
+
+function readTrackingConfig(root: ReturnType<typeof expectMap>, baseDir: string): TrackingConfig {
+  const tracking = expectMap(readRequiredNode(root, "tracking", "tracking"), "tracking");
+
+  return {
+    stateFile: resolveTrackingPath(
+      readString(readRequiredNode(tracking, "stateFile", "tracking.stateFile"), "tracking.stateFile"),
+      baseDir
+    ),
+    logFile: resolveTrackingPath(
+      readString(readRequiredNode(tracking, "logFile", "tracking.logFile"), "tracking.logFile"),
+      baseDir
     )
   };
 }
@@ -139,4 +160,8 @@ function readWorkflow(
     throw new ConfigError("workflow", "Expected at least one workflow.");
   }
   return workflows;
+}
+
+function resolveTrackingPath(filePath: string, baseDir: string): string {
+  return path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
 }

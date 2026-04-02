@@ -106,25 +106,14 @@ async function handleRequest(
     return;
   }
 
-  respond(response, 202, "Accepted");
+  const result = await options.onDelivery({ deliveryId, eventName, payload });
 
-  void options.onDelivery({ deliveryId, eventName, payload })
-    .then((result) => {
-      options.logSink.info(
-        logRecord("info", "processed webhook delivery", deliveryId, eventName, {
-          ...result
-        })
-      );
+  options.logSink.info(
+    logRecord("info", "processed webhook delivery", deliveryId, eventName, {
+      ...result
     })
-    .catch((error) => {
-      options.logSink.error(
-        logRecord("error", "webhook delivery failed", deliveryId, eventName, {
-          status: "failed",
-          reason: "unhandled_error",
-          errorMessage: error instanceof Error ? error.message : "Unknown webhook error."
-        })
-      );
-    });
+  );
+  respond(response, 202, "Accepted");
 }
 
 function getHeader(request: IncomingMessage, name: string): string | undefined {

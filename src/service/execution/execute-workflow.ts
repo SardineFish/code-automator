@@ -1,76 +1,66 @@
-import type { WorkspaceRepo } from "../../repo/workspace/workspace-repo.js";
-import { renderExecutorCommand } from "../template/render-workflow-template.js";
 import type { ProcessRunner } from "../../providers/process/process-runner.js";
+import type { WorkspaceRepo } from "../../repo/workspace/workspace-repo.js";
 import type { ServiceConfig } from "../../types/config.js";
-import type { ExecutorRunResult } from "../../types/execution.js";
+import type { WorkflowLaunchResult } from "../../types/execution.js";
+import type { WorkflowRunArtifacts } from "../../types/tracking.js";
+import { renderExecutorCommand } from "../template/render-workflow-template.js";
 import { toShellLiteral } from "./shell-escape.js";
 
 export interface ExecuteWorkflowOptions {
   config: ServiceConfig;
   executorName: string;
   prompt: string;
+  artifacts: WorkflowRunArtifacts;
+  installationToken: string;
+  workspacePath?: string;
   workspaceRepo: WorkspaceRepo;
   processRunner: ProcessRunner;
   baseEnv?: NodeJS.ProcessEnv;
 }
 
-export async function executeWorkflow(options: ExecuteWorkflowOptions): Promise<ExecutorRunResult> {
+export async function executeWorkflow(options: ExecuteWorkflowOptions): Promise<WorkflowLaunchResult> {
   const executor = options.config.executors[options.executorName];
 
   if (!executor) {
-    return buildErrorResult(options.executorName, "", "", "Unknown executor.");
+    throw new Error("Unknown executor.");
   }
 
-  const started = new Date();
-  const startedAtMs = Date.now();
-  const startedAt = started.toISOString();
-  let workspacePath = "";
-  let result: ExecutorRunResult;
+  const workspacePath = options.workspacePath ?? (await prepareWorkspace(options));
 
   try {
-    workspacePath = await resolveWorkspace(options);
     const command = renderExecutorCommand(executor.run, {
       prompt: toShellLiteral(options.prompt),
       workspace: toShellLiteral(workspacePath, { allowEmpty: true })
     });
-    const env = { ...options.baseEnv, ...executor.env };
-    const processResult = await options.processRunner.run(command, {
+    const env = {
+      ...options.baseEnv,
+      ...executor.env,
+      GITHUB_TOKEN: options.installationToken
+    };
+    const startedProcess = await options.processRunner.startDetached(command, {
+      artifacts: options.artifacts,
       env,
       cwd: workspacePath || process.cwd(),
       timeoutMs: executor.timeoutMs
     });
 
-    result = {
-      status: processResult.exitCode === 0 && !processResult.timedOut ? "success" : "failed",
+    return {
+      status: "running",
       executorName: options.executorName,
       command,
       workspacePath,
-      startedAt,
-      durationMs: Date.now() - startedAtMs,
-      process: processResult
+      pid: startedProcess.pid,
+      startedAt: startedProcess.startedAt
     };
   } catch (error) {
-    result = buildErrorResult(
-      options.executorName,
-      "",
-      workspacePath,
-      error instanceof Error ? error.message : "Unknown execution error.",
-      startedAt,
-      startedAtMs
-    );
+    const cleanupError = await cleanupWorkspace(options, workspacePath);
+
+    if (cleanupError) {
+      throw cleanupError;
+    }
+
+    throw error;
   }
-
-  const cleanupError = await cleanupWorkspace(options, workspacePath);
-
-  if (cleanupError) {
-    return {
-      ...result,
-      status: "error",
-      errorMessage: cleanupError.message
-    };
-  }
-
-  return result;
 }
 
 async function resolveWorkspace(options: ExecuteWorkflowOptions): Promise<string> {
@@ -79,6 +69,10 @@ async function resolveWorkspace(options: ExecuteWorkflowOptions): Promise<string
   }
 
   return options.workspaceRepo.createRunWorkspace(options.config.workspace.baseDir);
+}
+
+export async function prepareWorkspace(options: ExecuteWorkflowOptions): Promise<string> {
+  return resolveWorkspace(options);
 }
 
 async function cleanupWorkspace(
@@ -97,24 +91,4 @@ async function cleanupWorkspace(
       `Workspace cleanup failed: ${error instanceof Error ? error.message : "Unknown cleanup error."}`
     );
   }
-}
-
-function buildErrorResult(
-  executorName: string,
-  command: string,
-  workspacePath: string,
-  message: string,
-  startedAt = new Date().toISOString(),
-  startedAtMs = Date.now()
-): ExecutorRunResult {
-  return {
-    status: "error",
-    executorName,
-    command,
-    workspacePath,
-    startedAt,
-    durationMs: Date.now() - startedAtMs,
-    process: { exitCode: null, signal: null, stdout: "", stderr: "", timedOut: false },
-    errorMessage: message
-  };
 }

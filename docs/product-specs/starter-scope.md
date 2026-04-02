@@ -4,16 +4,18 @@ The first implementation slice for GitHub Agent Orchestrator is a YAML-driven wo
 
 ## Goals
 
-- Load a single YAML config file containing `clientId`, `appId`, `botHandle`, `server`, `workspace`, `whitelist`, `executors`, and `workflow`.
+- Load a single YAML config file containing `clientId`, `appId`, `botHandle`, `server`, `tracking`, `workspace`, `whitelist`, `executors`, and `workflow`.
 - Receive GitHub App webhooks with installation context.
 - Filter events by `whitelist.user` and `whitelist.repo`.
 - Normalize webhook inputs into canonical triggers such as `issue:open`, `issue:command:plan`, `issue:command:approve`, `issue:comment`, `pr:comment`, and `pr:review`.
 - Evaluate workflows in declaration order and run only the first matching workflow.
 - Support the initial workflow set `issue-plan`, `issue-implement`, `issue-at`, and `pr-review`.
 - Render workflow prompts from normalized input fields exposed through `${in.*}`, including simple aliases such as `${in.repo}`, `${in.subjectNumber}`, `${in.prNumber}`, and `${in.content}`.
-- Launch the configured executor command with `${prompt}`, `${workspace}`, executor-specific environment variables, and optional executor timeouts.
+- Launch the configured executor command with `${prompt}`, `${workspace}`, executor-specific environment variables, optional executor timeouts, and a GitHub App installation access token exposed as `GITHUB_TOKEN`.
+- Persist workflow run state to a JSON file and append terminal results to a JSONL log.
+- Recover tracked workflow status on restart from saved PIDs and detached-process result files.
 - Support service-side workspace settings with `workspace.enabled`, `workspace.baseDir`, and `workspace.cleanupAfterRun`.
-- Load the webhook secret from `.env` or the ambient environment through `GITHUB_WEBHOOK_SECRET`.
+- Load the webhook secret and app private key path from `.env` or the ambient environment through `GITHUB_WEBHOOK_SECRET` and `GITHUB_APP_PRIVATE_KEY_PATH`.
 
 ## Non-Goals
 

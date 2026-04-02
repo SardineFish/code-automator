@@ -1,15 +1,17 @@
 # GitHub Agent Orchestrator
 
-GitHub Agent Orchestrator is a YAML-driven GitHub App webhook automation service. It verifies webhook deliveries, filters them through repo and user whitelists, normalizes supported GitHub events into canonical triggers, renders prompts from normalized workflow input, and dispatches configured executor commands.
+GitHub Agent Orchestrator is a YAML-driven GitHub App webhook automation service. It verifies webhook deliveries, filters them through repo and user whitelists, normalizes supported GitHub events into canonical triggers, renders prompts from normalized workflow input, launches executor commands as detached background runs, persists workflow status to files, and recovers tracking after restart.
 
 ## Current Status
 
-The starter runtime is implemented. The repository now includes config loading and validation, template rendering, execution services, webhook normalization, deterministic workflow selection, an HTTP webhook server, fixture-driven workflow tests, and CI for `npm run check`.
+The starter runtime is implemented with persistent workflow tracking. The repository now includes config loading and validation, GitHub App installation-token generation, detached execution with PID tracking, file-backed workflow state and append-only results logging, restart reconciliation, fixture-driven workflow tests, and CI for `npm run check`.
 
 ## Quick Start
 
 1. Install dependencies.
-2. Create `.env` with `GITHUB_WEBHOOK_SECRET=...`.
+2. Create `.env` with:
+   - `GITHUB_WEBHOOK_SECRET=...`
+   - `GITHUB_APP_PRIVATE_KEY_PATH=/absolute/path/to/app.pem`
 3. Create a YAML config file.
 4. Run the service.
 
@@ -31,6 +33,9 @@ server:
   host: 0.0.0.0
   port: 3000
   webhookPath: /webhooks/github
+tracking:
+  stateFile: workflow-state.json
+  logFile: workflow-runs.jsonl
 workspace:
   enabled: false
   baseDir: /var/lib/github-agent-orchestrator/workspaces
@@ -79,13 +84,17 @@ workflow:
     prompt: Check PR ${in.prNumber} in repo ${in.repo}. You received review input: ${in.content}.
 ```
 
+Relative `tracking` paths are resolved relative to the YAML config file location.
+
 ## Workflow Model
 
 1. A GitHub App webhook arrives on `server.webhookPath`.
 2. The server verifies `X-Hub-Signature-256`, parses JSON, checks installation presence, and enforces `whitelist.user` and `whitelist.repo`.
 3. Supported events are normalized into canonical triggers such as `issue:open`, `issue:command:plan`, `issue:comment`, `pr:comment`, and `pr:review`.
 4. Workflows are evaluated in YAML declaration order and stop at the first match.
-5. The selected workflow renders a prompt from `${in.*}` fields and the executor command runs through `/bin/sh -lc`.
+5. The selected workflow renders a prompt from `${in.*}` fields.
+6. The service creates a queued workflow record, generates an installation access token for the webhook installation, launches the executor as a detached background process, and persists the PID plus artifact paths.
+7. A reconciliation loop updates the state file and append-only run log when detached runs complete. On restart, the service reloads the state file and recovers run status from saved PIDs and result files.
 
 ## Template Variables
 
@@ -96,9 +105,22 @@ workflow:
 - `${prompt}` and `${workspace}` are shell-escaped before command execution.
 - Missing or unsupported template variables fail fast.
 
+## Executor Environment
+
+- The service injects a GitHub App installation access token into every executor run as `GITHUB_TOKEN`.
+- The token is created from `clientId`, the app private key PEM, and the webhook installation ID.
+- Executors can use `GITHUB_TOKEN` to open PRs, comment, and make other GitHub API calls as the app installation.
+
+## Persistent Tracking
+
+- `tracking.stateFile` stores the current non-terminal workflow runs.
+- `tracking.logFile` is an append-only JSONL log of terminal workflow outcomes.
+- Per-run wrapper, PID, result, stdout, and stderr files are stored next to the state file under a derived run-artifacts directory.
+- The service does not need graceful draining to preserve workflow status. It can stop immediately and recover tracking on restart from the persisted state and detached process metadata.
+
 ## Production Bootstrap
 
-- The service reads `GITHUB_WEBHOOK_SECRET` from `.env` or the ambient environment.
+- The service reads `GITHUB_WEBHOOK_SECRET` and `GITHUB_APP_PRIVATE_KEY_PATH` from `.env` or the ambient environment.
 - Start with `npm start -- --config /path/to/service.yml`.
 - Point your GitHub App webhook URL at `http(s)://<host>:<port><webhookPath>`.
 - Executors are command templates only; containerization, sandboxing, and repo checkout strategy stay operator-defined.
