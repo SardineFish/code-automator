@@ -52,6 +52,7 @@ workflow:
 test("parseServiceConfig returns ordered workflows and typed config", () => {
   const parsed = parseServiceConfig(validConfig, "/tmp/configs/test.yml");
 
+  assert.equal(parsed.logging.level, "info");
   assert.equal(parsed.tracking.stateFile, "/tmp/configs/state.json");
   assert.equal(parsed.tracking.logFile, "/tmp/configs/runs.jsonl");
   assert.equal(parsed.workflow[0].name, "issue-plan");
@@ -69,6 +70,15 @@ test("parseServiceConfig returns ordered workflows and typed config", () => {
     }
   });
   assert.deepEqual(parsed["chat-bot"], { url: "/chat" });
+});
+
+test("parseServiceConfig accepts an explicit logging level", () => {
+  const parsed = parseServiceConfig(
+    `${validConfig}\nlogging:\n  level: debug`,
+    "/tmp/configs/test.yml"
+  );
+
+  assert.equal(parsed.logging.level, "debug");
 });
 
 test("parseServiceConfig rejects unknown workflow executor", () => {
@@ -134,6 +144,16 @@ test("parseServiceConfig requires positive executor timeouts", () => {
   assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
     assert.ok(error instanceof ConfigError);
     assert.match(error.message, /executors\.codex\.timeoutMs: Expected an integer greater than 0\./);
+    return true;
+  });
+});
+
+test("parseServiceConfig rejects unsupported logging levels", () => {
+  const invalid = `${validConfig}\nlogging:\n  level: verbose`;
+
+  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /logging\.level: Expected one of: debug, info, warn, error\./);
     return true;
   });
 });

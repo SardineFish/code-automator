@@ -6,6 +6,9 @@ export function createServiceConfig(): AppConfig {
       host: "127.0.0.1",
       port: 3000
     },
+    logging: {
+      level: "info"
+    },
     tracking: {
       stateFile: "/tmp/github-agent-orchestrator/state.json",
       logFile: "/tmp/github-agent-orchestrator/runs.jsonl"

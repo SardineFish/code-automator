@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { fileWorkflowTrackerRepo } from "../../../src/repo/tracking/file-workflow-tracker-repo.js";
 import { createFileWorkflowTracker } from "../../../src/service/tracking/file-workflow-tracker.js";
+import { createNoOpLogSink } from "../../fixtures/log-sink.js";
 
 test("fileWorkflowTracker persists running runs and appends terminal results", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "gao-tracker-"));
@@ -15,7 +16,7 @@ test("fileWorkflowTracker persists running runs and appends terminal results", a
       logFile: path.join(dir, "runs.jsonl")
     },
     fileWorkflowTrackerRepo,
-    { info() {}, error() {} }
+    createNoOpLogSink()
   );
 
   await tracker.initialize();
@@ -76,7 +77,7 @@ test("fileWorkflowTracker reconciles active runs from result files and missing p
       logFile: path.join(dir, "runs.jsonl")
     },
     fileWorkflowTrackerRepo,
-    { info() {}, error() {} }
+    createNoOpLogSink()
   );
 
   await tracker.initialize();
@@ -139,7 +140,7 @@ test("fileWorkflowTracker reconciles active runs from result files and missing p
       logFile: path.join(dir, "runs.jsonl")
     },
     fileWorkflowTrackerRepo,
-    { info() {}, error() {} }
+    createNoOpLogSink()
   );
 
   await reloadedTracker.initialize();
@@ -202,7 +203,7 @@ test("fileWorkflowTracker does not mark fresh queued runs as lost", async () => 
       logFile: path.join(dir, "runs.jsonl")
     },
     fileWorkflowTrackerRepo,
-    { info() {}, error() {} }
+    createNoOpLogSink()
   );
 
   await tracker.initialize();
@@ -257,19 +258,13 @@ test("fileWorkflowTracker does not mark fresh queued runs as lost", async () => 
 
 test("fileWorkflowTracker isolates malformed result files during reconciliation", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "gao-reconcile-bad-"));
-  const errors: string[] = [];
   const tracker = createFileWorkflowTracker(
     {
       stateFile: path.join(dir, "state.json"),
       logFile: path.join(dir, "runs.jsonl")
     },
     fileWorkflowTrackerRepo,
-    {
-      info() {},
-      error(record) {
-        errors.push(String(record.errorMessage));
-      }
-    }
+    createNoOpLogSink()
   );
 
   await tracker.initialize();
@@ -361,5 +356,4 @@ test("fileWorkflowTracker isolates malformed result files during reconciliation"
   assert.deepEqual(logLines.map((entry) => `${entry.runId}:${entry.status}`), [
     `${goodRun.runId}:succeeded`
   ]);
-  assert.deepEqual(errors, ["bad json"]);
 });

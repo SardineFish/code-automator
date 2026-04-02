@@ -5,8 +5,10 @@ import type { GitHubProviderConfig } from "../../service/github/read-github-prov
 import { extractWebhookGateContext, normalizeWebhookEvent } from "../../service/normalize/normalize-webhook-event.js";
 import { getWhitelistRejectionReason } from "../../service/orchestration/check-whitelist.js";
 import { verifyWebhookSignature } from "../../service/security/verify-webhook-signature.js";
-import type { AppContext, LogSink, OrchestrationResult } from "../../types/runtime.js";
+import type { LogSink } from "../../types/logging.js";
+import type { AppContext, OrchestrationResult } from "../../types/runtime.js";
 import { RequestBodyError, readRequestBody } from "../../runtime/http/read-request-body.js";
+import { buildDebugContentFields } from "./github-provider-debug-content.js";
 
 export interface CreateGitHubProviderHandlerOptions {
   github: GitHubProviderConfig;
@@ -56,22 +58,27 @@ export function createGitHubProviderHandler(options: CreateGitHubProviderHandler
     }
 
     const deliveryId = getHeader(request, "x-github-delivery");
+    const requestLog = options.logSink.child({ deliveryId, eventName });
     const gate = extractWebhookGateContext(payload);
     if (!gate) {
-      options.logSink.info(logRecord("info", "ignored delivery without gate context", deliveryId, eventName, {
+      requestLog.info({
+        message: "ignored delivery without gate context",
         reason: "missing_gate_context"
-      }));
+      });
       respond(response, 202, "Ignored");
       return;
     }
 
+    const gatedLog = requestLog.child({
+      repo: gate.repoFullName,
+      actorLogin: gate.actorLogin
+    });
     const rejectionReason = getWhitelistRejectionReason(options.github.whitelist, gate);
     if (rejectionReason) {
-      options.logSink.info(logRecord("info", "ignored delivery rejected by whitelist", deliveryId, eventName, {
+      gatedLog.info({
+        message: "ignored delivery rejected by whitelist",
         reason: rejectionReason,
-        actorLogin: gate.actorLogin,
-        repo: gate.repoFullName
-      }));
+      });
       respond(response, 202, "Ignored");
       return;
     }
@@ -83,12 +90,25 @@ export function createGitHubProviderHandler(options: CreateGitHubProviderHandler
       botHandle: options.github.botHandle
     });
     if (!normalized) {
-      options.logSink.info(logRecord("info", "processed webhook delivery", deliveryId, eventName, {
+      gatedLog.info({
+        message: "processed webhook delivery",
         status: "ignored",
         reason: "unsupported_event"
-      }));
+      });
       respond(response, 202, "Accepted");
       return;
+    }
+
+    const normalizedLog = gatedLog.child({
+      installationId: normalized.input.installation.id,
+      action: normalized.action
+    });
+    const debugContentFields = buildDebugContentFields(normalized);
+    if (debugContentFields && normalizedLog.isLevelEnabled("debug")) {
+      normalizedLog.debug({
+        message: "normalized webhook content",
+        ...debugContentFields
+      });
     }
 
     const installationToken = await options.installationTokenProvider.createInstallationToken(
@@ -109,9 +129,10 @@ export function createGitHubProviderHandler(options: CreateGitHubProviderHandler
     }
 
     const result = await context.submit();
-    options.logSink.info(logRecord("info", "processed webhook delivery", deliveryId, eventName, {
+    normalizedLog.info({
+      message: "processed webhook delivery",
       ...result
-    }));
+    });
     respond(response, 202, responseBodyFor(result));
   };
 }
@@ -119,16 +140,6 @@ export function createGitHubProviderHandler(options: CreateGitHubProviderHandler
 function getHeader(request: IncomingMessage, name: string): string | undefined {
   const value = request.headers[name];
   return Array.isArray(value) ? value[0] : value;
-}
-
-function logRecord(
-  level: "info" | "error",
-  message: string,
-  deliveryId: string | undefined,
-  eventName: string,
-  fields: Record<string, unknown>
-) {
-  return { timestamp: new Date().toISOString(), level, message, deliveryId, eventName, ...fields };
 }
 
 function respond(response: ServerResponse, statusCode: number, body: string): void {

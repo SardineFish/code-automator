@@ -4,11 +4,13 @@ import { type Document, isMap } from "yaml";
 import type {
   AppConfig,
   ExecutorConfig,
+  LoggingConfig,
   ServerConfig,
   TrackingConfig,
   WorkflowDefinition,
   WorkspaceConfig
 } from "../types/config.js";
+import { runtimeLogLevels } from "../types/logging.js";
 import { isTriggerKey } from "../types/triggers.js";
 import { ConfigError } from "./config-error.js";
 import {
@@ -28,6 +30,7 @@ export function validateServiceConfigDocument(
 ): AppConfig {
   const root = expectMap(document.contents, "root");
   const server = readServerConfig(root);
+  const logging = readLoggingConfig(root);
   const workspace = readWorkspaceConfig(root);
   const tracking = readTrackingConfig(root, baseDir);
   const executors = readExecutors(root);
@@ -37,6 +40,7 @@ export function validateServiceConfigDocument(
   return {
     ...providerSections,
     server,
+    logging,
     workspace,
     tracking,
     executors,
@@ -52,6 +56,36 @@ function readServerConfig(root: ReturnType<typeof expectMap>): ServerConfig {
     throw new ConfigError("server.port", "Expected an integer between 1 and 65535.");
   }
   return { host, port };
+}
+
+function readLoggingConfig(root: ReturnType<typeof expectMap>): LoggingConfig {
+  const loggingNode = root.get("logging", true);
+
+  if (!loggingNode) {
+    return { level: "info" };
+  }
+
+  const logging = expectMap(loggingNode, "logging");
+  const levelNode = logging.get("level", true);
+
+  if (!levelNode) {
+    return { level: "info" };
+  }
+
+  const level = readString(levelNode, "logging.level");
+
+  if (!isRuntimeLogLevel(level)) {
+    throw new ConfigError(
+      "logging.level",
+      `Expected one of: ${runtimeLogLevels.join(", ")}.`
+    );
+  }
+
+  return { level };
+}
+
+function isRuntimeLogLevel(value: string): value is LoggingConfig["level"] {
+  return runtimeLogLevels.includes(value as LoggingConfig["level"]);
 }
 
 function readWorkspaceConfig(root: ReturnType<typeof expectMap>): WorkspaceConfig {
@@ -168,6 +202,7 @@ function readProviderSections(document: Document.Parsed): Record<string, unknown
 
 const CORE_TOP_LEVEL_KEYS = new Set([
   "server",
+  "logging",
   "tracking",
   "workspace",
   "executors",

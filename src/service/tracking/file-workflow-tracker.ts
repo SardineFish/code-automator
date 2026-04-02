@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 
 import type { TrackingConfig } from "../../types/config.js";
-import type { LogSink } from "../../types/runtime.js";
+import type { LogSink } from "../../types/logging.js";
 import type {
   ActiveWorkflowRunRecord,
   CompletedWorkflowRunRecord,
   WorkflowTrackerState
 } from "../../types/tracking.js";
 import type { WorkflowTrackerRepo } from "../../repo/tracking/file-workflow-tracker-repo.js";
+import { logCompletedRun } from "./log-completed-run.js";
 import { cleanupWorkspace, getCompletedStatus, readPid, requireActiveRun } from "./tracker-helpers.js";
 import type { WorkflowTracker } from "./workflow-tracker.js";
 
@@ -97,17 +98,7 @@ export function createFileWorkflowTracker(
         delete state.activeRuns[runId];
         await repo.saveState(config, state);
         await repo.appendLog(config, { ...completedRecord });
-        logSink.info({
-          timestamp: new Date().toISOString(),
-          level: "info",
-          message: "workflow run completed",
-          runId,
-          workflowName: completedRecord.workflowName,
-          status,
-          pid: completedRecord.pid,
-          source: completedRecord.source,
-          repo: completedRecord.repoFullName
-        });
+        await logCompletedRun(logSink, completedRecord);
         return completedRecord;
       });
     },
@@ -154,8 +145,6 @@ export function createFileWorkflowTracker(
           });
         } catch (error) {
           logSink.error({
-            timestamp: new Date().toISOString(),
-            level: "error",
             message: "workflow reconciliation item failed",
             runId: record.runId,
             errorMessage: error instanceof Error ? error.message : "Unknown reconciliation error."

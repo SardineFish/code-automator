@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { processTriggerSubmission } from "../../../src/service/orchestration/process-trigger-submission.js";
 import { createServiceConfig } from "../../fixtures/service-config.js";
+import { createNoOpLogSink } from "../../fixtures/log-sink.js";
 import type { ActiveWorkflowRunRecord, WorkflowRunArtifacts } from "../../../src/types/tracking.js";
 
 function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
@@ -87,6 +88,7 @@ test("processTriggerSubmission launches the first matching workflow with matched
       },
       async reconcileActiveRuns() {}
     },
+    logSink: createNoOpLogSink(),
     baseEnv: { BASE: "1" }
   });
 
@@ -142,7 +144,8 @@ test("processTriggerSubmission ignores empty trigger submissions", async () => {
         throw new Error("should not run");
       },
       async reconcileActiveRuns() {}
-    }
+    },
+    logSink: createNoOpLogSink()
   });
 
   assert.equal(result.status, "ignored");

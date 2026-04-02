@@ -29,6 +29,8 @@ You can also set `GITHUB_AGENT_ORCHESTRATOR_CONFIG=./service.yml` instead of pas
 server:
   host: 0.0.0.0
   port: 3000
+logging:
+  level: info
 tracking:
   stateFile: workflow-state.json
   logFile: workflow-runs.jsonl
@@ -122,6 +124,7 @@ The config loader preserves additional top-level provider sections, but the ship
 - `tracking.stateFile` stores the current non-terminal workflow runs.
 - `tracking.logFile` is an append-only JSONL log of terminal workflow outcomes.
 - Per-run wrapper, PID, result, stdout, and stderr files are stored next to the state file under a derived run-artifacts directory.
+- `logging.level` controls human-readable runtime logs. `info` logs trigger evaluation, workflow selection, and execution outcomes. `debug` additionally logs inbound HTTP request metadata plus clipped executor command/stdout previews.
 - The service does not need graceful draining to preserve workflow status. It can stop immediately and recover tracking on restart from the persisted state and detached process metadata.
 
 ## Production Bootstrap

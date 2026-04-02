@@ -1,4 +1,5 @@
 import type { TriggerKey } from "./triggers.js";
+import type { RuntimeLogLevel } from "./logging.js";
 
 export interface ServerConfig {
   host: string;
@@ -14,6 +15,10 @@ export interface WorkspaceConfig {
 export interface TrackingConfig {
   stateFile: string;
   logFile: string;
+}
+
+export interface LoggingConfig {
+  level: RuntimeLogLevel;
 }
 
 export interface WhitelistConfig {
@@ -40,6 +45,7 @@ export interface WorkflowDefinition extends WorkflowConfigEntry {
 export interface AppConfig {
   [key: string]: unknown;
   server: ServerConfig;
+  logging: LoggingConfig;
   workspace: WorkspaceConfig;
   tracking: TrackingConfig;
   executors: Record<string, ExecutorConfig>;

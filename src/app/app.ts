@@ -6,7 +6,7 @@ import { processTriggerSubmission } from "../service/orchestration/process-trigg
 import type { WorkflowTracker } from "../service/tracking/workflow-tracker.js";
 import type { ServiceConfig } from "../types/config.js";
 import type { AppContext, TriggerSubmissionInput } from "../types/runtime.js";
-import type { LogSink } from "../types/runtime.js";
+import type { LogSink } from "../types/logging.js";
 
 export interface AppRuntimeOptions {
   config: ServiceConfig;
@@ -52,11 +52,14 @@ class AppBuilder {
 
   async listen(): Promise<Server> {
     const server = createServer((request, response) => {
-      void this.handleRequest(request, response).catch((error) => {
-        this.options.logSink.error({
-          timestamp: new Date().toISOString(),
-          level: "error",
+      const path = getRequestPath(request);
+      const requestLogSink = this.options.logSink.child({ path });
+      logCompletedRequest(request, response, path, requestLogSink);
+
+      void this.handleRequest(path, request, response).catch((error) => {
+        requestLogSink.error({
           message: "provider request handling failed",
+          method: request.method ?? "UNKNOWN",
           errorMessage: error instanceof Error ? error.message : "Unknown request handling error."
         });
 
@@ -77,8 +80,11 @@ class AppBuilder {
     return server;
   }
 
-  async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const routePath = getRequestPath(request);
+  async handleRequest(
+    routePath: string,
+    request: IncomingMessage,
+    response: ServerResponse
+  ): Promise<void> {
     const handler = this.#providers.get(routePath);
 
     if (!handler) {
@@ -133,7 +139,7 @@ function createAppContext(routePath: string, options: AppRuntimeOptions): AppCon
         processRunner: options.processRunner,
         workspaceRepo: options.workspaceRepo,
         workflowTracker: options.workflowTracker,
-        logSink: options.logSink,
+        logSink: options.logSink.child({ source: routePath }),
         baseEnv: options.baseEnv
       });
     }
@@ -165,6 +171,25 @@ function isStringMap(value: unknown): value is Record<string, string> {
 
 function getRequestPath(request: IncomingMessage): string {
   return new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+}
+
+function logCompletedRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  path: string,
+  logSink: LogSink
+): void {
+  const startedAt = process.hrtime.bigint();
+  const method = request.method ?? "UNKNOWN";
+
+  response.once("finish", () => {
+    logSink.debug({
+      message: "http request completed",
+      method,
+      status: response.statusCode,
+      durationMs: Number((process.hrtime.bigint() - startedAt) / BigInt(1_000_000))
+    });
+  });
 }
 
 function respond(response: ServerResponse, statusCode: number, body: string): void {

@@ -3,7 +3,7 @@ import type { Server } from "node:http";
 import { loadEnvironmentFromDotenv } from "../config/load-env-config.js";
 import { loadServiceConfig } from "../config/load-service-config.js";
 import { fetchGitHubInstallationTokenClient } from "../providers/github/github-installation-token-client.js";
-import { consoleJsonLogSink } from "../providers/logging/json-log-sink.js";
+import { createConsoleLogSink } from "../providers/logging/winston-log-sink.js";
 import { shellProcessRunner } from "../providers/process/process-runner.js";
 import { fileWorkflowTrackerRepo } from "../repo/tracking/file-workflow-tracker-repo.js";
 import { defaultWorkspaceRepo } from "../repo/workspace/workspace-repo.js";
@@ -18,6 +18,7 @@ const RECONCILE_INTERVAL_MS = 2000;
 export async function startService(configPath: string): Promise<Server> {
   const environment = loadEnvironmentFromDotenv();
   const config = await loadServiceConfig(configPath);
+  const logSink = createConsoleLogSink(config.logging.level);
   const github = readGitHubProviderConfig(config);
   const installationTokenProvider = createInstallationTokenProvider(
     environment.appPrivateKeyPath,
@@ -26,7 +27,7 @@ export async function startService(configPath: string): Promise<Server> {
   const workflowTracker = createFileWorkflowTracker(
     config.tracking,
     fileWorkflowTrackerRepo,
-    consoleJsonLogSink
+    logSink
   );
 
   await workflowTracker.initialize();
@@ -40,9 +41,7 @@ export async function startService(configPath: string): Promise<Server> {
     void workflowTracker
       .reconcileActiveRuns(shellProcessRunner, defaultWorkspaceRepo, config.workspace)
       .catch((error) => {
-        consoleJsonLogSink.error({
-          timestamp: new Date().toISOString(),
-          level: "error",
+        logSink.error({
           message: "workflow reconciliation failed",
           errorMessage: error instanceof Error ? error.message : "Unknown reconciliation error."
         });
@@ -55,7 +54,7 @@ export async function startService(configPath: string): Promise<Server> {
     processRunner: shellProcessRunner,
     workspaceRepo: defaultWorkspaceRepo,
     workflowTracker,
-    logSink: consoleJsonLogSink,
+    logSink,
     baseEnv: process.env
   })
     .provider(
@@ -64,14 +63,12 @@ export async function startService(configPath: string): Promise<Server> {
         github,
         webhookSecret: environment.webhookSecret,
         installationTokenProvider,
-        logSink: consoleJsonLogSink
+        logSink
       })
     )
     .listen();
 
-  consoleJsonLogSink.info({
-    timestamp: new Date().toISOString(),
-    level: "info",
+  logSink.info({
     message: "server listening",
     host: config.server.host,
     port: config.server.port,

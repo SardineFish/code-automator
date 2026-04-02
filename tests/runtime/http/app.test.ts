@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { App } from "../../../src/app/app.js";
 import { createServiceConfig } from "../../fixtures/service-config.js";
+import { createNoOpLogSink } from "../../fixtures/log-sink.js";
 
 test("App dispatches exact provider routes and lets providers own the response", async () => {
   const { server, url } = await startApp((request, response) => {
@@ -59,7 +60,9 @@ test("App returns 500 when a provider submits duplicate trigger names", async ()
   await once(server, "close");
 });
 
-async function startApp(handler: Parameters<ReturnType<typeof App.listen>["provider"]>[1]) {
+async function startApp(
+  handler: Parameters<ReturnType<typeof App.listen>["provider"]>[1]
+) {
   const server = await App.listen("127.0.0.1", 0, createRuntimeOptions())
     .provider("/chat", handler)
     .listen();
@@ -114,9 +117,6 @@ function createRuntimeOptions() {
       },
       async reconcileActiveRuns() {}
     },
-    logSink: {
-      info() {},
-      error() {}
-    }
+    logSink: createNoOpLogSink()
   };
 }

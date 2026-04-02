@@ -8,6 +8,8 @@ This document captures the current YAML configuration contract for the provider-
 server:
   host: 0.0.0.0
   port: 3000
+logging:
+  level: info
 tracking:
   stateFile: workflow-state.json
   logFile: workflow-runs.jsonl
@@ -71,6 +73,7 @@ workflow:
 ## Top-Level Keys
 
 - `server`: listener host and port. Provider routes are declared inside provider sections such as `gh.url`.
+- `logging`: runtime log level. Allowed values are `debug`, `info`, `warn`, and `error`. The default is `info`.
 - `tracking`: persistent workflow state and append-only results log paths. Relative paths resolve from the YAML config file directory.
 - `workspace`: workspace lifecycle policy for executor runs.
 - `executors`: named command templates plus static environment variables.
@@ -133,6 +136,7 @@ workflow:
 - `tracking.logFile` appends terminal workflow outcomes as JSON lines.
 - The service reconciles saved runs on startup and during normal operation by checking the saved PID and reading the detached process result file.
 - Tracking stays provider-agnostic. The matched trigger name and selected workflow are persisted with each run.
+- Full executor stdout and stderr are saved in per-run artifact files. Runtime console logs show only clipped previews when the active log level enables them.
 
 ## Runtime Startup
 

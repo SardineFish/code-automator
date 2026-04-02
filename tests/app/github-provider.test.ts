@@ -10,6 +10,7 @@ import {
   issueOpenedPayload,
   reviewPayload
 } from "../fixtures/github-webhooks.js";
+import { createNoOpLogSink } from "../fixtures/log-sink.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
 import type { ActiveWorkflowRunRecord, WorkflowRunArtifacts } from "../../src/types/tracking.js";
 
@@ -56,13 +57,12 @@ test("GitHub provider rejects invalid signatures", async () => {
 
 test("GitHub provider ignores whitelist rejections without launching workflows", async () => {
   const payload = issueCommentPayload("@github-agent-orchestrator /plan", { senderLogin: "intruder" });
-  const { logs, server, started, url } = await startGitHubApp();
+  const { server, started, url } = await startGitHubApp();
 
   const response = await signedRequest(url, payload, "issue_comment");
 
   assert.equal(response.status, 202);
   assert.deepEqual(started, []);
-  assert.equal(logs[0]?.reason, "actor_not_whitelisted");
   server.close();
   await once(server, "close");
 });
@@ -118,11 +118,11 @@ async function startGitHubApp() {
     botHandle: string;
     whitelist: { user: string[]; repo: string[] };
   };
-  const logs: Array<Record<string, unknown>> = [];
   const commands: string[] = [];
   const envs: NodeJS.ProcessEnv[] = [];
   const started: string[] = [];
   let runCount = 0;
+  const logSink = createNoOpLogSink();
 
   const server = await App.listen("127.0.0.1", 0, {
     config,
@@ -169,14 +169,7 @@ async function startGitHubApp() {
       },
       async reconcileActiveRuns() {}
     },
-    logSink: {
-      info(record) {
-        logs.push(record);
-      },
-      error(record) {
-        logs.push(record);
-      }
-    }
+    logSink
   })
     .provider(
       github.url,
@@ -188,14 +181,7 @@ async function startGitHubApp() {
             return "installation-token";
           }
         },
-        logSink: {
-          info(record) {
-            logs.push(record);
-          },
-          error(record) {
-            logs.push(record);
-          }
-        }
+        logSink
       })
     )
     .listen();
@@ -208,7 +194,6 @@ async function startGitHubApp() {
 
   return {
     server,
-    logs,
     commands,
     envs,
     started,

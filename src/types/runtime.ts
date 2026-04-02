@@ -60,14 +60,3 @@ export interface DeliveryContext {
   eventName: string;
   payload: unknown;
 }
-
-export interface RuntimeLogRecord extends Record<string, unknown> {
-  timestamp: string;
-  level: "info" | "error";
-  message: string;
-}
-
-export interface LogSink {
-  info(record: RuntimeLogRecord): void;
-  error(record: RuntimeLogRecord): void;
-}
