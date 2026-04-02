@@ -4,9 +4,7 @@ GitHub Agent Orchestrator is a YAML-driven GitHub App webhook automation service
 
 ## Current Status
 
-The starter runtime is implemented with persistent workflow tracking and a GitHub-only ingress path.
-
-Plans 11-14 in `docs/PLAN.md` reset the public contract toward a provider-extensible ingress model. The code in `src/` is still on the current GitHub-only runtime until those plans land.
+The runtime now uses a provider-extensible ingress app with persistent workflow tracking. `src/app/` registers the current GitHub provider at startup, and the shared app context handles trigger submission, workflow matching, detached execution, and restart reconciliation.
 
 ## Quick Start
 
@@ -25,9 +23,7 @@ npm start -- --config ./service.yml
 
 You can also set `GITHUB_AGENT_ORCHESTRATOR_CONFIG=./service.yml` instead of passing `--config`.
 
-## Planned Provider Config
-
-This is the target config contract for the staged ingress refactor, not the currently implemented runtime.
+## Config Model
 
 ```yaml
 server:
@@ -68,36 +64,38 @@ executors:
 workflow:
   issue-plan:
     on:
-      - gh:issue:open
-      - gh:issue:command:plan
+      - issue:open
+      - issue:command:plan
     use: codex
     prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Make an implementation plan and comment on this issue. Do not write any code.
   issue-implement:
     on:
-      - gh:issue:command:approve
-      - gh:issue:command:go
-      - gh:issue:command:implement
-      - gh:issue:command:code
+      - issue:command:approve
+      - issue:command:go
+      - issue:command:implement
+      - issue:command:code
     use: claude
     prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Assign the issue to yourself, implement your plan, and open a PR.
   issue-at:
     on:
-      - gh:issue:comment
+      - issue:comment
     use: codex
     prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Handle the user's request: ${in.content}. Do not write any code.
   pr-review:
     on:
-      - gh:pr:comment
-      - gh:pr:review
+      - pr:comment
+      - pr:review
     use: codex
     prompt: Check PR ${in.prNumber} in repo ${in.repo}. You received review input: ${in.content}.
 ```
 
 Relative `tracking` paths are resolved relative to the YAML config file location.
 
-## Planned Workflow Model
+The config loader preserves additional top-level provider sections, but the shipped startup wiring currently registers only the `gh` provider.
 
-1. `src/app/` registers provider handlers against provider-owned routes such as `gh.url` and `gitlab.url`.
+## Workflow Model
+
+1. `src/app/` registers provider handlers against provider-owned routes. The current startup path registers the GitHub provider at `gh.url`.
 2. A provider receives the request, validates provider-specific policy, and calls `context.trigger(name, { in, env })` one or more times.
 3. `context.submit()` evaluates workflows in YAML declaration order and stops at the first match.
 4. The selected workflow renders a prompt from the matched trigger's `${in.*}` fields.
@@ -128,6 +126,7 @@ Relative `tracking` paths are resolved relative to the YAML config file location
 
 ## Production Bootstrap
 
+- Set `GITHUB_WEBHOOK_SECRET` and `GITHUB_APP_PRIVATE_KEY_PATH` for the shipped GitHub provider.
 - Start with `npm start -- --config /path/to/service.yml`.
 - Configure each provider's inbound URL path inside its provider section, for example `gh.url: /gh-hook`.
 - Executors are command templates only; containerization, sandboxing, and repo checkout strategy stay operator-defined.

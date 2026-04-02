@@ -96,7 +96,7 @@ This file defines the implementation order for the whole GitHub Agent Orchestrat
 - Add request-scoped app context methods for collecting triggers and submitting them through the shared workflow engine.
 - Keep one-workflow-per-request behavior and make provider-supplied `env` values flow into executor launches.
 
-### Plan 14: GitHub provider migration and regression coverage [pending]
+### Plan 14: GitHub provider migration and regression coverage [done]
 
 - Move the current GitHub signature checks, whitelist rules, trigger normalization, and token generation into a GitHub provider module.
 - Register the GitHub provider from `src/app/` using provider-owned config and route wiring.

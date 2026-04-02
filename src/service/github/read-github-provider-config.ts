@@ -1,7 +1,7 @@
 import { ConfigError } from "../../config/config-error.js";
 import type { AppConfig, WhitelistConfig } from "../../types/config.js";
 
-export interface GitHubRuntimeConfig {
+export interface GitHubProviderConfig {
   url: string;
   clientId: string;
   appId: number;
@@ -9,7 +9,7 @@ export interface GitHubRuntimeConfig {
   whitelist: WhitelistConfig;
 }
 
-export function readGitHubRuntimeConfig(config: AppConfig): GitHubRuntimeConfig {
+export function readGitHubProviderConfig(config: AppConfig): GitHubProviderConfig {
   const section = asRecord(config.gh, "gh");
   const whitelist = asRecord(section.whitelist, "gh.whitelist");
 

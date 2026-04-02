@@ -8,17 +8,17 @@ import { shellProcessRunner } from "../providers/process/process-runner.js";
 import { fileWorkflowTrackerRepo } from "../repo/tracking/file-workflow-tracker-repo.js";
 import { defaultWorkspaceRepo } from "../repo/workspace/workspace-repo.js";
 import { createInstallationTokenProvider } from "../service/github/create-installation-token-provider.js";
-import { readGitHubRuntimeConfig } from "../service/github/read-github-runtime-config.js";
+import { readGitHubProviderConfig } from "../service/github/read-github-provider-config.js";
 import { createFileWorkflowTracker } from "../service/tracking/file-workflow-tracker.js";
 import { App } from "./app.js";
-import { createGitHubRequestHandler } from "./create-github-request-handler.js";
+import { createGitHubProviderHandler } from "./providers/github-provider.js";
 
 const RECONCILE_INTERVAL_MS = 2000;
 
 export async function startService(configPath: string): Promise<Server> {
   const environment = loadEnvironmentFromDotenv();
   const config = await loadServiceConfig(configPath);
-  const github = readGitHubRuntimeConfig(config);
+  const github = readGitHubProviderConfig(config);
   const installationTokenProvider = createInstallationTokenProvider(
     environment.appPrivateKeyPath,
     fetchGitHubInstallationTokenClient
@@ -60,7 +60,7 @@ export async function startService(configPath: string): Promise<Server> {
   })
     .provider(
       github.url,
-      createGitHubRequestHandler({
+      createGitHubProviderHandler({
         github,
         webhookSecret: environment.webhookSecret,
         installationTokenProvider,

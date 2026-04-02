@@ -1,8 +1,6 @@
 # Starter Scope
 
-The next implementation slice for GitHub Agent Orchestrator is a provider-extensible ingress refactor that keeps the existing workflow engine but removes the GitHub-only request boundary.
-
-The runtime in `src/` is still GitHub-only until Plans 12-14 in `docs/PLAN.md` land. This document describes the target slice for that refactor.
+The current starter scope for GitHub Agent Orchestrator is a provider-extensible ingress runtime with a shipped GitHub provider.
 
 ## Goals
 
@@ -11,7 +9,7 @@ The runtime in `src/` is still GitHub-only until Plans 12-14 in `docs/PLAN.md` l
 - Let provider handlers parse requests, validate provider-specific policy, submit one or more candidate triggers, and write the HTTP response.
 - Normalize provider input into provider-defined `in` objects plus optional per-run environment variables.
 - Evaluate workflows in declaration order and run only the first matching workflow.
-- Keep the initial GitHub workflow set `issue-plan`, `issue-implement`, `issue-at`, and `pr-review` working after the GitHub provider migration.
+- Keep the initial GitHub workflow set `issue-plan`, `issue-implement`, `issue-at`, and `pr-review` working behind the GitHub provider.
 - Render workflow prompts from provider-defined `${in.*}` fields.
 - Launch the configured executor command with `${prompt}`, `${workspace}`, executor-specific environment variables, optional executor timeouts, and any provider-supplied request-scoped environment variables.
 - Persist workflow run state to a JSON file and append terminal results to a JSONL log.
@@ -27,41 +25,42 @@ The runtime in `src/` is still GitHub-only until Plans 12-14 in `docs/PLAN.md` l
 - No auto-created workspace when `workspace.enabled` is `false`.
 - No system-wide provider schema registry in the core config loader. Providers own validation for their top-level config sections.
 - No required trigger prefix convention in code. Providers may share or prefix trigger names by documentation and team policy.
+- No shipped GitLab or chat-bot provider implementation yet. Extra provider config sections are preserved, but startup currently registers only GitHub.
 
 ## Workflow Contract
 
-The initial migrated GitHub workflows are:
+The shipped GitHub workflows are:
 
 - `issue-plan`
-  - `on`: provider-defined GitHub trigger names for issue open and plan command
+  - `on`: `issue:open`, `issue:command:plan`
   - `use`: `codex`
   - purpose: make an implementation plan and comment on the issue without writing code
 - `issue-implement`
-  - `on`: provider-defined GitHub trigger names for implementation approval commands
+  - `on`: `issue:command:approve`, `issue:command:go`, `issue:command:implement`, `issue:command:code`
   - `use`: `claude`
   - purpose: implement the approved plan and open a PR
 - `issue-at`
-  - `on`: provider-defined GitHub generic mention trigger
+  - `on`: `issue:comment`
   - `use`: `codex`
   - purpose: handle a generic bot mention in an issue without writing code
 - `pr-review`
-  - `on`: provider-defined GitHub PR comment and review triggers
+  - `on`: `pr:comment`, `pr:review`
   - `use`: `codex`
   - purpose: react to PR feedback from a whitelisted user
 
-The migrated GitHub planning workflow should still be able to render a prompt shaped like:
+The GitHub planning workflow should render a prompt shaped like:
 
 ```text
 Check subject ${in.subjectNumber} in repo ${in.repo}. Make an implementation plan and comment on this issue. Do not write any code.
 ```
 
-The migrated GitHub generic issue mention workflow should still be able to render a prompt shaped like:
+The GitHub generic issue mention workflow should render a prompt shaped like:
 
 ```text
 Check subject ${in.subjectNumber} in repo ${in.repo}. Handle the user's request: ${in.content}. Do not write any code.
 ```
 
-The GitHub provider should continue to normalize both `@<bot-handle> /plan` and `@<bot-handle> plan` to the same plan trigger. The same rule still applies to `approve`, `go`, `implement`, and `code`.
+The GitHub provider normalizes both `@<bot-handle> /plan` and `@<bot-handle> plan` to `issue:command:plan`. The same rule applies to `approve`, `go`, `implement`, and `code`.
 
 ## Match Precedence
 

@@ -1,21 +1,21 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import type { InstallationTokenProvider } from "../service/github/create-installation-token-provider.js";
-import type { GitHubRuntimeConfig } from "../service/github/read-github-runtime-config.js";
-import { normalizeWebhookEvent, extractWebhookGateContext } from "../service/normalize/normalize-webhook-event.js";
-import { getWhitelistRejectionReason } from "../service/orchestration/check-whitelist.js";
-import { verifyWebhookSignature } from "../service/security/verify-webhook-signature.js";
-import type { AppContext, LogSink, OrchestrationResult } from "../types/runtime.js";
-import { RequestBodyError, readRequestBody } from "../runtime/http/read-request-body.js";
+import type { InstallationTokenProvider } from "../../service/github/create-installation-token-provider.js";
+import type { GitHubProviderConfig } from "../../service/github/read-github-provider-config.js";
+import { extractWebhookGateContext, normalizeWebhookEvent } from "../../service/normalize/normalize-webhook-event.js";
+import { getWhitelistRejectionReason } from "../../service/orchestration/check-whitelist.js";
+import { verifyWebhookSignature } from "../../service/security/verify-webhook-signature.js";
+import type { AppContext, LogSink, OrchestrationResult } from "../../types/runtime.js";
+import { RequestBodyError, readRequestBody } from "../../runtime/http/read-request-body.js";
 
-export interface CreateGitHubRequestHandlerOptions {
-  github: GitHubRuntimeConfig;
+export interface CreateGitHubProviderHandlerOptions {
+  github: GitHubProviderConfig;
   webhookSecret: string;
   installationTokenProvider: InstallationTokenProvider;
   logSink: LogSink;
 }
 
-export function createGitHubRequestHandler(options: CreateGitHubRequestHandlerOptions) {
+export function createGitHubProviderHandler(options: CreateGitHubProviderHandlerOptions) {
   return async (request: IncomingMessage, response: ServerResponse, context: AppContext): Promise<void> => {
     if (request.method !== "POST") {
       response.setHeader("Allow", "POST");

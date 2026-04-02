@@ -1,8 +1,6 @@
 # Workflow Config
 
-This document captures the target YAML configuration contract for the provider-extensible ingress refactor.
-
-The runtime in `src/` is still GitHub-only until Plans 12-14 in `docs/PLAN.md` land. This doc is the staged target contract for that refactor.
+This document captures the current YAML configuration contract for the provider-extensible ingress runtime.
 
 ## Example
 
@@ -45,27 +43,27 @@ executors:
 workflow:
   issue-plan:
     on:
-      - gh:issue:open
-      - gh:issue:command:plan
+      - issue:open
+      - issue:command:plan
     use: codex
     prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Make an implementation plan and comment on this issue. Do not write any code.
   issue-implement:
     on:
-      - gh:issue:command:approve
-      - gh:issue:command:go
-      - gh:issue:command:implement
-      - gh:issue:command:code
+      - issue:command:approve
+      - issue:command:go
+      - issue:command:implement
+      - issue:command:code
     use: claude
     prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Assign the issue to yourself, implement your plan, and open a PR.
   issue-at:
     on:
-      - gh:issue:comment
+      - issue:comment
     use: codex
     prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Handle the user's request: ${in.content}. Do not write any code.
   pr-review:
     on:
-      - gh:pr:comment
-      - gh:pr:review
+      - pr:comment
+      - pr:review
     use: codex
     prompt: Check PR ${in.prNumber} in repo ${in.repo}. You received a review comment: ${in.content}.
 ```
@@ -79,6 +77,7 @@ workflow:
 - `executors.<name>.timeoutMs`: optional per-executor timeout in milliseconds.
 - `workflow`: ordered workflow definitions keyed by workflow name.
 - Any other top-level key is provider-owned configuration. The core app preserves those sections and registered providers validate them at startup.
+- The shipped startup wiring currently reads and registers `gh`. Other provider sections are preserved for future startup registration.
 
 ## Provider Runtime Model
 
@@ -97,7 +96,7 @@ workflow:
 - The first workflow whose `on` list contains any candidate trigger is selected.
 - Only one workflow runs per request.
 - Trigger keys are exact-match strings. The core runtime does not reserve prefixes or provider namespaces.
-- Provider docs should recommend prefixes such as `gh:` or `gitlab:` when teams want collision avoidance, but the core runtime does not require them.
+- Providers may prefix trigger names when teams want collision avoidance, but the core runtime does not require them.
 
 ## Interpolation Rules
 
@@ -138,4 +137,4 @@ workflow:
 ## Runtime Startup
 
 - The service starts with `npm start -- --config /path/to/service.yml` or `GITHUB_AGENT_ORCHESTRATOR_CONFIG=/path/to/service.yml npm start`.
-- Providers validate any required environment variables or secret file paths during startup when they are registered.
+- The shipped GitHub provider validates `gh.*` and requires `GITHUB_WEBHOOK_SECRET` plus `GITHUB_APP_PRIVATE_KEY_PATH` during startup.
