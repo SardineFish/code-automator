@@ -114,6 +114,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Remove the legacy startup env fallback so the CLI requires `--config`.
 - Narrow GitHub issue command aliases to `plan` and `approve`, then update docs, fixtures, and regression coverage to match.
 
+### Plan 17: Additional event-source providers
+
+- Register at least one new non-GitHub event provider on top of the shared app context, routing, workflow submission, and tracking contract.
+- Keep provider-specific auth, payload parsing, trigger mapping, and config validation inside provider-owned code instead of leaking it into the shared runtime.
+- Extend startup wiring, docs, fixtures, and regression coverage so multiple event sources can coexist without changing first-match-wins workflow behavior.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

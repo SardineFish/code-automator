@@ -6,6 +6,8 @@ It receives GitHub webhooks, matches them against ordered workflows in YAML, lau
 
 This repository is run with Coding Automator itself, so the project is dogfooding the issue-to-PR workflow it documents.
 
+The runtime is event-provider extensible. Today the shipped provider is the GitHub App provider under `gh`, and the shared workflow engine is designed so future event sources can plug into the same routing, execution, and tracking model.
+
 ## What You Need
 
 - Node.js 20 or newer
@@ -89,6 +91,14 @@ workflow:
 ```
 
 Relative `tracking` paths resolve from the YAML file location. The config loader preserves additional top-level provider sections, but the shipped startup wiring currently registers only `gh`.
+
+## Event Providers
+
+- The current production provider is the GitHub App provider configured under `gh`.
+- Providers own their inbound route, request parsing, auth, trigger naming, and provider-specific config.
+- The shared runtime owns workflow matching, executor launch, persistent tracking, and restart recovery.
+- The YAML contract already preserves additional top-level provider sections so new event sources can be added without changing the core workflow model.
+- The current roadmap includes support for more event sources on top of the same provider contract.
 
 ## Issue Flow
 
