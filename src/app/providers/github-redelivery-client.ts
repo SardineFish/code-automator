@@ -1,0 +1,112 @@
+import { asObject, readInteger, readString } from "./github-utils.js";
+
+export interface GitHubAppWebhookDelivery {
+  id: number;
+  guid: string;
+  deliveredAt: string;
+  redelivery: boolean;
+  status: string;
+  statusCode?: number;
+}
+
+export interface GitHubAppWebhookDeliveryPage {
+  deliveries: GitHubAppWebhookDelivery[];
+  nextPageUrl?: string;
+}
+
+export interface GitHubAppWebhookDeliveryClient {
+  listDeliveries(jwt: string, pageUrl?: string): Promise<GitHubAppWebhookDeliveryPage>;
+  redeliverDelivery(jwt: string, deliveryId: number): Promise<void>;
+}
+
+export const fetchGitHubAppWebhookDeliveryClient: GitHubAppWebhookDeliveryClient = {
+  async listDeliveries(jwt, pageUrl) {
+    const response = await fetch(pageUrl ?? "https://api.github.com/app/hook/deliveries?per_page=100", {
+      headers: createGitHubAppHeaders(jwt)
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`GitHub webhook delivery list request failed: ${response.status} ${body}`);
+    }
+
+    const payload = (await response.json()) as unknown;
+
+    if (!Array.isArray(payload)) {
+      throw new Error("GitHub webhook delivery list response did not return an array.");
+    }
+
+    return {
+      deliveries: payload.flatMap((entry) => {
+        const normalized = normalizeDelivery(entry);
+        return normalized ? [normalized] : [];
+      }),
+      nextPageUrl: readNextPageUrl(response.headers.get("link"))
+    };
+  },
+  async redeliverDelivery(jwt, deliveryId) {
+    const response = await fetch(`https://api.github.com/app/hook/deliveries/${deliveryId}/attempts`, {
+      method: "POST",
+      headers: createGitHubAppHeaders(jwt)
+    });
+
+    if (response.ok) {
+      return;
+    }
+
+    const body = await response.text();
+    throw new Error(`GitHub webhook redelivery request failed: ${response.status} ${body}`);
+  }
+};
+
+function normalizeDelivery(value: unknown): GitHubAppWebhookDelivery | null {
+  const delivery = asObject(value);
+
+  if (!delivery) {
+    return null;
+  }
+
+  const id = readInteger(delivery, "id");
+  const guid = readString(delivery, "guid");
+  const deliveredAt = readString(delivery, "delivered_at");
+
+  if (id === undefined || !guid || !deliveredAt || Number.isNaN(Date.parse(deliveredAt))) {
+    return null;
+  }
+
+  return {
+    id,
+    guid,
+    deliveredAt,
+    redelivery: typeof delivery.redelivery === "boolean" ? delivery.redelivery : false,
+    status: readString(delivery, "status") ?? "",
+    statusCode: readInteger(delivery, "status_code")
+  };
+}
+
+function createGitHubAppHeaders(jwt: string): Record<string, string> {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${jwt}`,
+    "User-Agent": "github-agent-orchestrator",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+}
+
+function readNextPageUrl(linkHeader: string | null): string | undefined {
+  if (!linkHeader) {
+    return undefined;
+  }
+
+  for (const entry of linkHeader.split(",")) {
+    const [target, relation] = entry.split(";").map((part) => part.trim());
+
+    if (relation !== 'rel="next"' || !target?.startsWith("<") || !target.endsWith(">")) {
+      continue;
+    }
+
+    return target.slice(1, -1);
+  }
+
+  return undefined;
+}

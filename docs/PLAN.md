@@ -102,6 +102,12 @@ This file defines the implementation order for the whole GitHub Agent Orchestrat
 - Register the GitHub provider from `src/app/` using provider-owned config and route wiring.
 - Update tests, fixtures, docs status, and regression coverage so the new provider model is the implemented runtime.
 
+### Plan 15: GitHub App webhook redelivery polling [done]
+
+- Add provider-owned `gh.redelivery` validation with `false | { intervalSeconds, maxPerRun }` semantics and keep the config parsing inside GitHub startup code rather than the shared loader.
+- Poll recent GitHub App webhook deliveries from `main.ts`, retry unresolved failed delivery GUIDs once per GUID, and persist a small checkpoint beside the tracked run artifacts.
+- Add focused coverage and docs for the redelivery worker, delivery API client, and new operator-facing config.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

@@ -19,6 +19,7 @@ import {
   requireEnv,
   respond
 } from "./github-utils.js";
+import { resolveGitHubProviderConfig } from "./github-config.js";
 
 /**
  * GitHub provider trigger contract.
@@ -52,10 +53,7 @@ export async function githubProvider(
   context: AppContext
 ): Promise<void> {
   // Read provider-owned config from the shared app context.
-  const github = context.config.gh;
-  if (!github) {
-    throw new Error("Missing gh provider config.");
-  }
+  const github = resolveGitHubProviderConfig(context.config.gh);
 
   // Enforce the basic HTTP contract before reading the body.
   if (request.method !== "POST") {

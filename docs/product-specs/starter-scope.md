@@ -16,6 +16,7 @@ The current starter scope for GitHub Agent Orchestrator is a provider-extensible
 - Recover tracked workflow status on restart from saved PIDs and detached-process result files.
 - Support service-side workspace settings with `workspace.enabled`, `workspace.baseDir`, and `workspace.cleanupAfterRun`.
 - Keep GitHub-specific auth, signature verification, and whitelist behavior inside the GitHub provider rather than the core app.
+- Optionally poll GitHub App webhook deliveries and request one redelivery per unresolved failed delivery GUID within GitHub's 3-day redelivery window.
 
 ## Non-Goals
 

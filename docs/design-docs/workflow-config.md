@@ -22,6 +22,9 @@ gh:
   clientId: your-github-app-client-id
   appId: 123456
   botHandle: github-agent-orchestrator
+  redelivery:
+    intervalSeconds: 300
+    maxPerRun: 20
   whitelist:
     user:
       - Foo
@@ -81,6 +84,7 @@ workflow:
 - `workflow`: ordered workflow definitions keyed by workflow name.
 - Any other top-level key is provider-owned configuration. The core app preserves those sections and registered providers validate them at startup.
 - The shipped startup wiring currently reads and registers `gh`. Other provider sections are preserved for future startup registration.
+- `gh.redelivery` is optional. Use `false` or omit it to disable background webhook redelivery polling.
 
 ## Provider Runtime Model
 
@@ -142,3 +146,4 @@ workflow:
 
 - The service starts with `npm start -- --config /path/to/service.yml` or `GITHUB_AGENT_ORCHESTRATOR_CONFIG=/path/to/service.yml npm start`.
 - The shipped GitHub provider validates `gh.*` and requires `GITHUB_WEBHOOK_SECRET` plus `GITHUB_APP_PRIVATE_KEY_PATH` during startup.
+- When `gh.redelivery` is enabled, `main.ts` starts a second GitHub App polling loop that scans the last 3 days of app webhook deliveries, retries unresolved failures once per delivery GUID, and persists its checkpoint beside the tracked run artifacts.
