@@ -10,9 +10,12 @@ export function createAppContext(
 ): AppContext {
   let submitted = false;
   const triggers = new Map<string, { input: Record<string, unknown>; env: Record<string, string> }>();
+  const log = runtime.logSink.child({ source: routePath });
 
   return {
     config,
+    env: runtime.baseEnv,
+    log,
     trigger(name, payload) {
       assertTriggerName(name);
       assertTriggerPayload(payload);
@@ -45,7 +48,7 @@ export function createAppContext(
         processRunner: runtime.processRunner,
         workspaceRepo: runtime.workspaceRepo,
         workflowTracker: runtime.workflowTracker,
-        logSink: runtime.logSink.child({ source: routePath }),
+        logSink: log,
         baseEnv: runtime.baseEnv
       });
     }

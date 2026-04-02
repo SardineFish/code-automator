@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createInstallationTokenProvider } from "../../../src/service/github/create-installation-token-provider.js";
+import { createInstallationTokenProvider } from "../../../src/app/providers/github-utils.js";
 
 test("createInstallationTokenProvider signs a JWT with clientId and exchanges it for a token", async () => {
   const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });

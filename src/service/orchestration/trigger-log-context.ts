@@ -1,15 +1,12 @@
 import type { WorkflowRunContext } from "../../types/tracking.js";
 
 export function extractWorkflowRunContext(input: Record<string, unknown>): Partial<WorkflowRunContext> {
-  const event = readObject(input.event);
-  const installation = readObject(input.installation);
-
   return {
-    deliveryId: readString(input.deliveryId) ?? readString(event?.deliveryId),
-    eventName: readString(input.eventName) ?? readString(event?.name),
+    deliveryId: readString(input.deliveryId),
+    eventName: readString(input.event),
     repoFullName: readString(input.repo),
-    actorLogin: readString(input.actorLogin),
-    installationId: readInteger(installation?.id)
+    actorLogin: readString(input.user),
+    installationId: readInteger(input.installationId)
   };
 }
 
@@ -23,12 +20,6 @@ export function extractTriggerLogContext(input: Record<string, unknown>): Record
     actorLogin: context.actorLogin,
     installationId: context.installationId
   };
-}
-
-function readObject(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
 }
 
 function readString(value: unknown): string | undefined {

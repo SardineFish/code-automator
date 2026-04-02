@@ -15,7 +15,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
   }
 
   await App(config)
-    .provider(github.url, githubProvider(github, { logLevel: config.logging.level }))
+    .provider(github.url, githubProvider)
     .listen();
 }
 

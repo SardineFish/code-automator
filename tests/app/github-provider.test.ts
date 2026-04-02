@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
+import { createHmac, generateKeyPairSync } from "node:crypto";
 import { once } from "node:events";
-import test from "node:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test, { type TestContext } from "node:test";
 
 import { App } from "../../src/app/app.js";
 import { githubProvider } from "../../src/app/providers/github-provider.js";
@@ -38,8 +41,8 @@ function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
   };
 }
 
-test("GitHub provider rejects invalid signatures", async () => {
-  const { server, url } = await startGitHubApp();
+test("GitHub provider rejects invalid signatures", async (t) => {
+  const { url } = await startGitHubApp(t);
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -51,48 +54,58 @@ test("GitHub provider rejects invalid signatures", async () => {
   });
 
   assert.equal(response.status, 401);
-  server.close();
-  await once(server, "close");
 });
 
-test("GitHub provider ignores whitelist rejections without launching workflows", async () => {
+test("GitHub provider ignores whitelist rejections without launching workflows", async (t) => {
   const payload = issueCommentPayload("@github-agent-orchestrator /plan", { senderLogin: "intruder" });
-  const { server, started, url } = await startGitHubApp();
+  const { started, url } = await startGitHubApp(t);
 
   const response = await signedRequest(url, payload, "issue_comment");
 
   assert.equal(response.status, 202);
   assert.deepEqual(started, []);
-  server.close();
-  await once(server, "close");
 });
 
-test("GitHub provider routes the documented workflows through the provider app", async () => {
-  const { commands, envs, server, started, url } = await startGitHubApp();
+test("GitHub provider ignores plain issue comments without a leading mention", async (t) => {
+  const { started, url } = await startGitHubApp(t);
+  const response = await signedRequest(url, issueCommentPayload("please plan this"), "issue_comment");
+
+  assert.equal(response.status, 202);
+  assert.deepEqual(started, []);
+});
+
+test("GitHub provider routes the documented workflows through the provider app", async (t) => {
+  const { commands, envs, started, url } = await startGitHubApp(t);
   const scenarios = [
     {
       name: "issue-plan",
       eventName: "issues",
       payload: issueOpenedPayload(),
-      expectedCommand: "codex exec 'Plan subject 7 in acme/demo'"
+      expectedCommand: "codex exec 'Plan issue 7'"
     },
     {
       name: "issue-implement",
       eventName: "issue_comment",
       payload: issueCommentPayload("@github-agent-orchestrator /approve"),
-      expectedCommand: "claude exec 'Implement subject 7 in acme/demo'"
+      expectedCommand: "claude exec 'Implement issue 7'"
     },
     {
       name: "issue-at",
       eventName: "issue_comment",
       payload: issueCommentPayload("@github-agent-orchestrator please summarize"),
-      expectedCommand: "codex exec 'Handle please summarize on acme/demo'"
+      expectedCommand: "codex exec 'Handle please summarize'"
+    },
+    {
+      name: "pr-comment",
+      eventName: "issue_comment",
+      payload: issueCommentPayload("looks good", { pullRequest: true }),
+      expectedCommand: "codex exec 'Review PR 7: looks good'"
     },
     {
       name: "pr-review",
       eventName: "pull_request_review",
       payload: reviewPayload("", "changes_requested"),
-      expectedCommand: "codex exec 'Review PR 8 in acme/demo: changes_requested'"
+      expectedCommand: "codex exec 'Review PR 8: request-changes'"
     }
   ];
 
@@ -105,11 +118,9 @@ test("GitHub provider routes the documented workflows through the provider app",
   assert.deepEqual(commands, scenarios.map((scenario) => scenario.expectedCommand));
   assert.deepEqual(started, scenarios.map((scenario) => scenario.expectedCommand));
   assert.ok(envs.every((env) => env.GITHUB_TOKEN === "installation-token"));
-  server.close();
-  await once(server, "close");
 });
 
-async function startGitHubApp() {
+async function startGitHubApp(t: TestContext) {
   const config = {
     ...createServiceConfig(),
     server: {
@@ -122,11 +133,31 @@ async function startGitHubApp() {
   if (!github) {
     throw new Error("Missing test GitHub config.");
   }
+  const env = await createGitHubAppEnv();
   const commands: string[] = [];
   const envs: NodeJS.ProcessEnv[] = [];
   const started: string[] = [];
   let runCount = 0;
   const logSink = createNoOpLogSink();
+  const originalFetch = global.fetch;
+
+  global.fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+
+    if (url.startsWith("https://api.github.com/app/installations/")) {
+      return new Response(JSON.stringify({ token: "installation-token" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    return originalFetch(input, init);
+  };
 
   const server = await App(config, {
     processRunner: {
@@ -173,21 +204,22 @@ async function startGitHubApp() {
       async reconcileActiveRuns() {}
     },
     logSink,
+    baseEnv: {
+      ...process.env,
+      GITHUB_WEBHOOK_SECRET: "top-secret",
+      GITHUB_APP_PRIVATE_KEY_PATH: env.pemPath
+    },
     reconcileIntervalMs: 0
   })
-    .provider(
-      github.url,
-      githubProvider(github, {
-        webhookSecret: "top-secret",
-        installationTokenProvider: {
-          async createInstallationToken() {
-            return "installation-token";
-          }
-        },
-        logSink
-      })
-    )
+    .provider(github.url, githubProvider)
     .listen();
+
+  t.after(async () => {
+    global.fetch = originalFetch;
+    server.close();
+    await once(server, "close");
+    await rm(env.dir, { recursive: true, force: true });
+  });
 
   const address = server.address();
 
@@ -202,6 +234,17 @@ async function startGitHubApp() {
     started,
     url: `http://127.0.0.1:${address.port}${github.url}`
   };
+}
+
+async function createGitHubAppEnv() {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const pem = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
+  const dir = await mkdtemp(path.join(tmpdir(), "gao-gh-provider-"));
+  const pemPath = path.join(dir, "app.pem");
+
+  await writeFile(pemPath, pem);
+
+  return { dir, pemPath };
 }
 
 async function signedRequest(url: string, payload: unknown, eventName: string) {

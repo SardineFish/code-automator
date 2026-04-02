@@ -48,7 +48,7 @@ workflow:
       - issue:open
       - issue:command:plan
     use: codex
-    prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Make an implementation plan and comment on this issue. Do not write any code.
+    prompt: Check issue ${in.issueId}. Make an implementation plan and comment on this issue. Do not write any code.
   issue-implement:
     on:
       - issue:command:approve
@@ -56,18 +56,18 @@ workflow:
       - issue:command:implement
       - issue:command:code
     use: claude
-    prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Assign the issue to yourself, implement your plan, and open a PR.
+    prompt: Check issue ${in.issueId}. Assign the issue to yourself, implement your plan, and open a PR.
   issue-at:
     on:
       - issue:comment
     use: codex
-    prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Handle the user's request: ${in.content}. Do not write any code.
+    prompt: Check issue ${in.issueId}. Handle the user's request: ${in.content}. Do not write any code.
   pr-review:
     on:
       - pr:comment
       - pr:review
     use: codex
-    prompt: Check PR ${in.prNumber} in repo ${in.repo}. You received a review comment: ${in.content}.
+    prompt: Check PR ${in.prId}. You received a review comment: ${in.content}.
 ```
 
 ## Top-Level Keys
@@ -119,7 +119,7 @@ workflow:
 
 - `in` is a provider-defined plain object.
 - The core runtime does not require shared fields inside `in`.
-- Providers may choose to emit stable aliases such as `repo`, `subjectNumber`, or `content`, but that is a provider contract rather than a system-wide rule.
+- Providers define the `in` object. The current GitHub provider keeps it minimal and emits only `event`, `user`, and when relevant `issueId`, `prId`, `content`, `prReview`, and `command`.
 - Missing fields still fail fast in templates when referenced.
 
 ## Workspace Rules

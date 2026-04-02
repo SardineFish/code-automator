@@ -1,66 +1,54 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { WorkflowTemplateInput } from "../../../src/types/workflow-input.js";
+import type { WorkflowInput } from "../../../src/types/workflow-input.js";
 import {
   renderExecutorCommand,
   renderWorkflowPrompt
 } from "../../../src/service/template/render-workflow-template.js";
 
-const templateInput: WorkflowTemplateInput = {
-  event: { name: "issue_comment", action: "created", deliveryId: "abc-123" },
-  repository: { owner: "acme", name: "demo", fullName: "acme/demo" },
-  actor: { login: "octocat", id: 1 },
-  installation: { id: 42 },
-  subject: { kind: "issue", number: 7, title: "Fix crash", body: "Details" },
-  message: { text: "@bot plan this" },
-  comment: { body: "@bot plan this" },
-  repo: "acme/demo",
-  repoOwner: "acme",
-  repoName: "demo",
-  actorLogin: "octocat",
+const templateInput: WorkflowInput = {
+  event: "issue:comment",
+  issueId: "7",
+  user: "octocat",
   content: "@bot plan this",
-  subjectKind: "issue",
-  subjectNumber: 7,
-  subjectTitle: "Fix crash",
-  subjectBody: "Details",
-  subjectUrl: "https://example.test/issues/7",
-  issueNumber: 7,
-  commentBody: "@bot plan this",
-  eventName: "issue_comment",
-  eventAction: "created"
+  command: "plan",
+  meta: {
+    source: "github",
+    body: "@bot plan this"
+  }
 };
 
 test("renderWorkflowPrompt resolves aliases and structured paths", () => {
   const rendered = renderWorkflowPrompt(
-    "Issue ${in.subjectNumber} in ${in.repo} by ${in.actor.login}: ${in.comment.body}",
+    "Issue ${in.issueId} by ${in.user}: ${in.meta.body}",
     { in: templateInput }
   );
 
-  assert.equal(rendered, "Issue 7 in acme/demo by octocat: @bot plan this");
+  assert.equal(rendered, "Issue 7 by octocat: @bot plan this");
 });
 
 test("renderWorkflowPrompt renders objects as compact JSON", () => {
-  const rendered = renderWorkflowPrompt("Repo JSON ${in.repository}", { in: templateInput });
+  const rendered = renderWorkflowPrompt("Meta JSON ${in.meta}", { in: templateInput });
   assert.equal(
     rendered,
-    'Repo JSON {"owner":"acme","name":"demo","fullName":"acme/demo"}'
+    'Meta JSON {"source":"github","body":"@bot plan this"}'
   );
 });
 
 test("renderWorkflowPrompt renders null values as empty string", () => {
   const inputWithNull = {
     ...templateInput,
-    subject: { ...templateInput.subject, body: null as unknown as string }
+    meta: { ...templateInput.meta as Record<string, unknown>, body: null }
   };
-  const rendered = renderWorkflowPrompt("Body ${in.subject.body}", { in: inputWithNull });
+  const rendered = renderWorkflowPrompt("Body ${in.meta.body}", { in: inputWithNull });
   assert.equal(rendered, "Body ");
 });
 
 test("renderWorkflowPrompt rejects missing path segments", () => {
-  assert.throws(() => renderWorkflowPrompt("Missing ${in.review.state}", { in: templateInput }), {
+  assert.throws(() => renderWorkflowPrompt("Missing ${in.meta.missing}", { in: templateInput }), {
     name: "TemplateRenderError",
-    message: /Template variable 'in\.review\.state': Missing value at 'review'\./
+    message: /Template variable 'in\.meta\.missing': Missing value at 'missing'\./
   });
 });
 
@@ -75,7 +63,7 @@ test("renderExecutorCommand resolves prompt and workspace variables", () => {
 
 test("renderExecutorCommand rejects unsupported roots", () => {
   assert.throws(
-    () => renderExecutorCommand("echo ${in.repo}", { prompt: "x", workspace: "" }),
+    () => renderExecutorCommand("echo ${in.issueId}", { prompt: "x", workspace: "" }),
     {
       name: "TemplateRenderError",
       message: /Unsupported root 'in'/
@@ -85,10 +73,10 @@ test("renderExecutorCommand rejects unsupported roots", () => {
 
 test("renderWorkflowPrompt rejects prototype-chain properties", () => {
   assert.throws(
-    () => renderWorkflowPrompt("Ctor ${in.repository.constructor}", { in: templateInput }),
+    () => renderWorkflowPrompt("Ctor ${in.meta.constructor}", { in: templateInput }),
     {
       name: "TemplateRenderError",
-      message: /Template variable 'in\.repository\.constructor': Missing value at 'constructor'\./
+      message: /Template variable 'in\.meta\.constructor': Missing value at 'constructor'\./
     }
   );
 });
@@ -96,17 +84,17 @@ test("renderWorkflowPrompt rejects prototype-chain properties", () => {
 test("renderWorkflowPrompt rejects unsupported rendered values", () => {
   const inputWithFunction = {
     ...templateInput,
-    repository: {
-      ...templateInput.repository,
+    meta: {
+      ...(templateInput.meta as Record<string, unknown>),
       unsafe: () => "nope"
     }
-  } as unknown as WorkflowTemplateInput;
+  } as WorkflowInput;
 
   assert.throws(
-    () => renderWorkflowPrompt("Unsafe ${in.repository.unsafe}", { in: inputWithFunction }),
+    () => renderWorkflowPrompt("Unsafe ${in.meta.unsafe}", { in: inputWithFunction }),
     {
       name: "TemplateRenderError",
-      message: /Template variable 'in\.repository\.unsafe': Unsupported value type\./
+      message: /Template variable 'in\.meta\.unsafe': Unsupported value type\./
     }
   );
 });

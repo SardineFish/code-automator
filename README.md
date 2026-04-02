@@ -69,7 +69,7 @@ workflow:
       - issue:open
       - issue:command:plan
     use: codex
-    prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Make an implementation plan and comment on this issue. Do not write any code.
+    prompt: Check issue ${in.issueId}. Make an implementation plan and comment on this issue. Do not write any code.
   issue-implement:
     on:
       - issue:command:approve
@@ -77,18 +77,18 @@ workflow:
       - issue:command:implement
       - issue:command:code
     use: claude
-    prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Assign the issue to yourself, implement your plan, and open a PR.
+    prompt: Check issue ${in.issueId}. Assign the issue to yourself, implement your plan, and open a PR.
   issue-at:
     on:
       - issue:comment
     use: codex
-    prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Handle the user's request: ${in.content}. Do not write any code.
+    prompt: Check issue ${in.issueId}. Handle the user's request: ${in.content}. Do not write any code.
   pr-review:
     on:
       - pr:comment
       - pr:review
     use: codex
-    prompt: Check PR ${in.prNumber} in repo ${in.repo}. You received review input: ${in.content}.
+    prompt: Check PR ${in.prId}. You received review input: ${in.content}.
 ```
 
 Relative `tracking` paths are resolved relative to the YAML config file location.
@@ -108,7 +108,7 @@ The config loader preserves additional top-level provider sections, but the ship
 
 - Workflow prompts may use `${in.*}` variables.
 - `in` is provider-defined. The core runtime does not require shared fields inside it.
-- GitHub-specific aliases such as `${in.repo}`, `${in.subjectNumber}`, `${in.prNumber}`, and `${in.content}` remain part of the current GitHub provider contract.
+- The current GitHub provider keeps `in` intentionally small. It emits `event`, `user`, and when relevant `issueId`, `prId`, `content`, `prReview`, and `command`.
 - Executor commands may use `${prompt}` and `${workspace}`.
 - `${prompt}` and `${workspace}` are shell-escaped before command execution.
 - Missing or unsupported template variables fail fast.

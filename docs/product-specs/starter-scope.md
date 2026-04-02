@@ -51,13 +51,13 @@ The shipped GitHub workflows are:
 The GitHub planning workflow should render a prompt shaped like:
 
 ```text
-Check subject ${in.subjectNumber} in repo ${in.repo}. Make an implementation plan and comment on this issue. Do not write any code.
+Check issue ${in.issueId}. Make an implementation plan and comment on this issue. Do not write any code.
 ```
 
 The GitHub generic issue mention workflow should render a prompt shaped like:
 
 ```text
-Check subject ${in.subjectNumber} in repo ${in.repo}. Handle the user's request: ${in.content}. Do not write any code.
+Check issue ${in.issueId}. Handle the user's request: ${in.content}. Do not write any code.
 ```
 
 The GitHub provider normalizes both `@<bot-handle> /plan` and `@<bot-handle> plan` to `issue:command:plan`. The same rule applies to `approve`, `go`, `implement`, and `code`.

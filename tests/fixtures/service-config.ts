@@ -45,25 +45,25 @@ export function createServiceConfig(): AppConfig {
         name: "issue-plan",
         on: ["issue:open", "issue:command:plan"],
         use: "codex",
-        prompt: "Plan subject ${in.subjectNumber} in ${in.repo}"
+        prompt: "Plan issue ${in.issueId}"
       },
       {
         name: "issue-implement",
         on: ["issue:command:approve", "issue:command:go", "issue:command:implement", "issue:command:code"],
         use: "claude",
-        prompt: "Implement subject ${in.subjectNumber} in ${in.repo}"
+        prompt: "Implement issue ${in.issueId}"
       },
       {
         name: "issue-at",
         on: ["issue:comment"],
         use: "codex",
-        prompt: "Handle ${in.content} on ${in.repo}"
+        prompt: "Handle ${in.content}"
       },
       {
         name: "pr-review",
         on: ["pr:comment", "pr:review"],
         use: "codex",
-        prompt: "Review PR ${in.prNumber} in ${in.repo}: ${in.content}"
+        prompt: "Review PR ${in.prId}: ${in.content}"
       }
     ]
   };

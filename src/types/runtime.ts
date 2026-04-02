@@ -1,21 +1,12 @@
 import type { TriggerKey } from "./triggers.js";
 import type { ServiceConfig, WorkflowDefinition } from "./config.js";
+import type { LogSink } from "./logging.js";
 import type { WorkflowRunStatus } from "./tracking.js";
-import type { WorkflowTemplateInput } from "./workflow-input.js";
 
 export interface WebhookGateContext {
   repoFullName: string;
   actorLogin: string;
   installationId: number;
-}
-
-export interface NormalizedWebhookEvent {
-  deliveryId?: string;
-  eventName: string;
-  action?: string;
-  candidateTriggers: TriggerKey[];
-  input: WorkflowTemplateInput;
-  gate: WebhookGateContext;
 }
 
 export interface SelectedWorkflow {
@@ -51,12 +42,8 @@ export interface SubmittedTrigger {
 
 export interface AppContext {
   config: ServiceConfig;
+  env: NodeJS.ProcessEnv;
+  log: LogSink;
   trigger(name: TriggerKey, payload: TriggerSubmissionInput): void;
   submit(): Promise<OrchestrationResult>;
-}
-
-export interface DeliveryContext {
-  deliveryId?: string;
-  eventName: string;
-  payload: unknown;
 }

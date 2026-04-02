@@ -1,3 +1,5 @@
+import { config as loadDotenv } from "dotenv";
+
 import { createConsoleLogSink } from "../providers/logging/winston-log-sink.js";
 import { shellProcessRunner } from "../providers/process/process-runner.js";
 import { fileWorkflowTrackerRepo } from "../repo/tracking/file-workflow-tracker-repo.js";
@@ -42,7 +44,7 @@ export function createAppRuntimeOptions(
       overrides.workflowTracker ??
       createFileWorkflowTracker(config.tracking, fileWorkflowTrackerRepo, logSink),
     logSink,
-    baseEnv: overrides.baseEnv ?? process.env,
+    baseEnv: resolveBaseEnv(overrides.baseEnv),
     reconcileIntervalMs: overrides.reconcileIntervalMs ?? DEFAULT_RECONCILE_INTERVAL_MS
   };
 }
@@ -74,4 +76,13 @@ export async function initializeWorkflowTracking(
   }, options.reconcileIntervalMs);
 
   reconcileTimer.unref();
+}
+
+function resolveBaseEnv(baseEnv: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+  if (baseEnv) {
+    return baseEnv;
+  }
+
+  loadDotenv({ quiet: true });
+  return process.env;
 }

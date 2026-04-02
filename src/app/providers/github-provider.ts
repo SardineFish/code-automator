@@ -1,186 +1,142 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { loadEnvironmentFromDotenv, type EnvironmentConfig } from "../../config/load-env-config.js";
-import { fetchGitHubInstallationTokenClient } from "../../providers/github/github-installation-token-client.js";
-import { createConsoleLogSink } from "../../providers/logging/winston-log-sink.js";
-import { createInstallationTokenProvider, type InstallationTokenProvider } from "../../service/github/create-installation-token-provider.js";
-import type { GitHubProviderConfig } from "../../types/config.js";
 import { getWhitelistRejectionReason } from "../../service/orchestration/check-whitelist.js";
-import { extractWebhookGateContext, normalizeWebhookEvent } from "../../service/normalize/normalize-webhook-event.js";
 import { verifyWebhookSignature } from "../../service/security/verify-webhook-signature.js";
-import type { LogSink, RuntimeLogLevel } from "../../types/logging.js";
-import type { AppContext, OrchestrationResult } from "../../types/runtime.js";
-import { RequestBodyError, readRequestBody } from "../../runtime/http/read-request-body.js";
-import { buildDebugContentFields } from "./github-provider-debug-content.js";
+import type { AppContext } from "../../types/runtime.js";
+import type { GitHubInput } from "../../types/workflow-input.js";
+import {
+  getHeader,
+  getInstallationTokenProvider,
+  mapReviewState,
+  parseIssueMention,
+  readBody,
+  readGate,
+  readId,
+  readObject,
+  readPayload,
+  readString,
+  requireEnv,
+  respond
+} from "./github-utils.js";
 
-export interface CreateGitHubProviderHandlerOptions {
-  github: GitHubProviderConfig;
-  webhookSecret: string;
-  installationTokenProvider: InstallationTokenProvider;
-  logSink: LogSink;
-}
+export async function githubProvider(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: AppContext
+): Promise<void> {
+  const github = context.config.gh;
+  if (!github) {
+    throw new Error("Missing gh provider config.");
+  }
+  if (request.method !== "POST") {
+    response.setHeader("Allow", "POST");
+    return respond(response, 405, "Method Not Allowed");
+  }
 
-export interface GitHubProviderOptions {
-  webhookSecret?: string;
-  installationTokenProvider?: InstallationTokenProvider;
-  logSink?: LogSink;
-  logLevel?: RuntimeLogLevel;
-  baseEnv?: NodeJS.ProcessEnv;
-}
+  const body = await readBody(request, response);
+  if (!body) {
+    return;
+  }
+  if (!verifyWebhookSignature(requireEnv(context.env, "GITHUB_WEBHOOK_SECRET"), body, getHeader(request, "x-hub-signature-256"))) {
+    return respond(response, 401, "Invalid signature");
+  }
 
-export function githubProvider(
-  github: GitHubProviderConfig,
-  options: GitHubProviderOptions = {}
-) {
-  let environment: EnvironmentConfig | undefined;
-  const getEnvironment = (): EnvironmentConfig => {
-    environment ??= loadEnvironmentFromDotenv(undefined, options.baseEnv ?? process.env);
-    return environment;
-  };
+  const eventName = getHeader(request, "x-github-event");
+  if (!eventName) {
+    return respond(response, 400, "Missing X-GitHub-Event header");
+  }
 
-  return createGitHubProviderHandler({
-    github,
-    webhookSecret: options.webhookSecret ?? getEnvironment().webhookSecret,
-    installationTokenProvider:
-      options.installationTokenProvider ??
-      createInstallationTokenProvider(
-        getEnvironment().appPrivateKeyPath,
-        fetchGitHubInstallationTokenClient
-      ),
-    logSink: options.logSink ?? createConsoleLogSink(options.logLevel ?? "info")
-  });
-}
+  const payload = readPayload(body, response);
+  if (!payload) {
+    return;
+  }
 
-export function createGitHubProviderHandler(options: CreateGitHubProviderHandlerOptions) {
-  return async (request: IncomingMessage, response: ServerResponse, context: AppContext): Promise<void> => {
-    if (request.method !== "POST") {
-      response.setHeader("Allow", "POST");
-      respond(response, 405, "Method Not Allowed");
-      return;
+  const gate = readGate(payload);
+  const requestLog = context.log.child({ eventName, actorLogin: gate?.actorLogin, repo: gate?.repoFullName });
+  if (!gate) {
+    requestLog.info({ message: "ignored delivery without gate context", reason: "missing_gate_context" });
+    return respond(response, 202, "Ignored");
+  }
+  const rejectionReason = getWhitelistRejectionReason(github.whitelist, gate);
+  if (rejectionReason) {
+    requestLog.info({ message: "ignored delivery rejected by whitelist", reason: rejectionReason });
+    return respond(response, 202, "Ignored");
+  }
+
+  const action = readString(payload, "action");
+  const issue = readObject(payload, "issue");
+  const comment = readObject(payload, "comment");
+  const review = readObject(payload, "review");
+  const pullRequest = readObject(payload, "pull_request");
+  const baseInput: Omit<GitHubInput, "event"> = { user: gate.actorLogin };
+  const triggerNames: string[] = [];
+
+  if (eventName === "issues" && action === "opened") {
+    const issueId = readId(issue);
+    if (!issueId) {
+      return respond(response, 202, "Accepted");
     }
-    let body: Buffer;
-
-    try {
-      body = await readRequestBody(request);
-    } catch (error) {
-      if (error instanceof RequestBodyError) {
-        respond(response, error.statusCode, error.message);
-        return;
+    baseInput.issueId = issueId;
+    baseInput.content = readString(issue ?? {}, "body");
+    triggerNames.push("issue:open");
+  } else if (eventName === "issue_comment" && action === "created") {
+    const issueId = readId(issue);
+    if (!issueId || !comment) {
+      return respond(response, 202, "Accepted");
+    }
+    const content = readString(comment, "body") ?? "";
+    if (readObject(issue ?? {}, "pull_request")) {
+      baseInput.prId = issueId;
+      baseInput.content = content;
+      triggerNames.push("pr:comment");
+    } else {
+      const mention = parseIssueMention(content, github.botHandle);
+      if (!mention.hasMention) {
+        requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "unsupported_event" });
+        return respond(response, 202, "Accepted");
       }
-
-      throw error;
+      baseInput.issueId = issueId;
+      baseInput.content = mention.content;
+      baseInput.command = mention.command;
+      if (mention.command) {
+        triggerNames.push(`issue:command:${mention.command}`);
+      }
+      triggerNames.push("issue:comment");
     }
-
-    const signature = getHeader(request, "x-hub-signature-256");
-    if (!verifyWebhookSignature(options.webhookSecret, body, signature)) {
-      respond(response, 401, "Invalid signature");
-      return;
+  } else if (eventName === "pull_request_review_comment" && action === "created") {
+    const prId = readId(pullRequest);
+    if (!prId || !comment) {
+      return respond(response, 202, "Accepted");
     }
-
-    const eventName = getHeader(request, "x-github-event");
-    if (!eventName) {
-      respond(response, 400, "Missing X-GitHub-Event header");
-      return;
+    baseInput.prId = prId;
+    baseInput.content = readString(comment, "body");
+    triggerNames.push("pr:comment");
+  } else if (eventName === "pull_request_review") {
+    const prId = readId(pullRequest);
+    if (!prId || !review) {
+      return respond(response, 202, "Accepted");
     }
+    const reviewState = readString(review, "state");
+    baseInput.prId = prId;
+    baseInput.prReview = mapReviewState(reviewState);
+    baseInput.content = readString(review, "body")?.trim() || baseInput.prReview || reviewState;
+    triggerNames.push("pr:review");
+  } else {
+    requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "unsupported_event" });
+    return respond(response, 202, "Accepted");
+  }
 
-    let payload: unknown;
-    try {
-      payload = JSON.parse(body.toString("utf8"));
-    } catch {
-      respond(response, 400, "Invalid JSON");
-      return;
-    }
+  const installationToken = await getInstallationTokenProvider(requireEnv(context.env, "GITHUB_APP_PRIVATE_KEY_PATH"))
+    .createInstallationToken(github.clientId, gate.installationId);
 
-    const deliveryId = getHeader(request, "x-github-delivery");
-    const requestLog = options.logSink.child({ deliveryId, eventName });
-    const gate = extractWebhookGateContext(payload);
-    if (!gate) {
-      requestLog.info({
-        message: "ignored delivery without gate context",
-        reason: "missing_gate_context"
-      });
-      respond(response, 202, "Ignored");
-      return;
-    }
-
-    const gatedLog = requestLog.child({
-      repo: gate.repoFullName,
-      actorLogin: gate.actorLogin
+  for (const triggerName of triggerNames) {
+    context.trigger(triggerName, {
+      in: { ...baseInput, event: triggerName },
+      env: { GITHUB_TOKEN: installationToken }
     });
-    const rejectionReason = getWhitelistRejectionReason(options.github.whitelist, gate);
-    if (rejectionReason) {
-      gatedLog.info({
-        message: "ignored delivery rejected by whitelist",
-        reason: rejectionReason,
-      });
-      respond(response, 202, "Ignored");
-      return;
-    }
+  }
 
-    const normalized = normalizeWebhookEvent({
-      eventName,
-      deliveryId,
-      payload,
-      botHandle: options.github.botHandle
-    });
-    if (!normalized) {
-      gatedLog.info({
-        message: "processed webhook delivery",
-        status: "ignored",
-        reason: "unsupported_event"
-      });
-      respond(response, 202, "Accepted");
-      return;
-    }
-
-    const normalizedLog = gatedLog.child({
-      installationId: normalized.input.installation.id,
-      action: normalized.action
-    });
-    const debugContentFields = buildDebugContentFields(normalized);
-    if (debugContentFields && normalizedLog.isLevelEnabled("debug")) {
-      normalizedLog.debug({
-        message: "normalized webhook content",
-        ...debugContentFields
-      });
-    }
-
-    const installationToken = await options.installationTokenProvider.createInstallationToken(
-      options.github.clientId,
-      normalized.input.installation.id
-    );
-    for (const triggerName of normalized.candidateTriggers) {
-      context.trigger(triggerName, {
-        in: {
-          ...normalized.input,
-          event: {
-            ...normalized.input.event,
-            matchedTrigger: triggerName
-          }
-        },
-        env: { GITHUB_TOKEN: installationToken }
-      });
-    }
-
-    const result = await context.submit();
-    normalizedLog.info({
-      message: "processed webhook delivery",
-      ...result
-    });
-    respond(response, 202, responseBodyFor(result));
-  };
-}
-
-function getHeader(request: IncomingMessage, name: string): string | undefined {
-  const value = request.headers[name];
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function respond(response: ServerResponse, statusCode: number, body: string): void {
-  response.statusCode = statusCode;
-  response.end(body);
-}
-
-function responseBodyFor(result: OrchestrationResult): string {
-  return result.status === "failed" ? "Failed" : "Accepted";
+  const result = await context.submit();
+  requestLog.info({ message: "processed webhook delivery", ...result });
+  respond(response, 202, result.status === "failed" ? "Failed" : "Accepted");
 }

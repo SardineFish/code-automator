@@ -40,12 +40,12 @@ test("processTriggerSubmission launches the first matching workflow with matched
     triggers: [
       {
         name: "issue:command:plan",
-        input: { subjectNumber: 7, repo: "acme/demo" },
+        input: { event: "issue:command:plan", issueId: "7", user: "octocat" },
         env: { GH_TOKEN: "token-1", SHARED: "trigger" }
       },
       {
         name: "issue:comment",
-        input: { content: "please summarize", repo: "acme/demo" },
+        input: { event: "issue:comment", content: "please summarize", user: "octocat" },
         env: { GH_TOKEN: "token-2" }
       }
     ],
@@ -97,7 +97,7 @@ test("processTriggerSubmission launches the first matching workflow with matched
   assert.equal(result.workflowName, "issue-plan");
   assert.equal(result.matchedTrigger, "issue:command:plan");
   await waitForCondition(() => running.length === 1);
-  assert.deepEqual(commands, ["codex exec 'Plan subject 7 in acme/demo'"]);
+  assert.deepEqual(commands, ["codex exec 'Plan issue 7'"]);
   assert.equal(envValues[0]?.BASE, "1");
   assert.equal(envValues[0]?.EXECUTOR, "codex");
   assert.equal(envValues[0]?.GH_TOKEN, "token-1");

@@ -12,6 +12,6 @@ export function startService(config: ServiceConfig): Promise<Server> {
   }
 
   return App(config)
-    .provider(github.url, githubProvider(github, { logLevel: config.logging.level }))
+    .provider(github.url, githubProvider)
     .listen();
 }

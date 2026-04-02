@@ -41,7 +41,7 @@ workflow:
       - issue:open
       - issue:command:plan
     use: codex
-    prompt: Plan issue \${in.subjectNumber} in \${in.repo}
+    prompt: Plan issue \${in.issueId}
   issue-at:
     on:
       - issue:comment
