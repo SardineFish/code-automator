@@ -78,6 +78,30 @@ This file defines the implementation order for the whole GitHub Agent Orchestrat
 - Add CI automation for `npm run check` and any new product-specific checks.
 - Document the production bootstrap path, config example, and deployment assumptions once the runtime is complete.
 
+### Plan 11: Provider-extensible ingress docs and contract reset [done]
+
+- Update the public docs to describe the staged provider-extensible ingress refactor.
+- Remove the GitHub-only config contract from the design docs and replace it with the target shared app config plus provider-owned sections.
+- Mark the new contract as pending until the runtime plans below land so the docs stay honest during the transition.
+
+### Plan 12: Shared app contracts and config loading [pending]
+
+- Replace the GitHub-only core config with a provider-agnostic app config that validates only shared runtime keys.
+- Preserve arbitrary top-level provider sections on the parsed config so providers can interpret and validate their own fields.
+- Make workflow trigger keys generic non-empty strings while preserving YAML declaration order and first-match-wins selection.
+
+### Plan 13: Provider app runtime and submission engine [pending]
+
+- Replace the GitHub-only webhook server with a route-registered provider app that dispatches requests by provider URL.
+- Add request-scoped app context methods for collecting triggers and submitting them through the shared workflow engine.
+- Keep one-workflow-per-request behavior and make provider-supplied `env` values flow into executor launches.
+
+### Plan 14: GitHub provider migration and regression coverage [pending]
+
+- Move the current GitHub signature checks, whitelist rules, trigger normalization, and token generation into a GitHub provider module.
+- Register the GitHub provider from `src/app/` using provider-owned config and route wiring.
+- Update tests, fixtures, docs status, and regression coverage so the new provider model is the implemented runtime.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

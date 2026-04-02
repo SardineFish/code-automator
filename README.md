@@ -4,7 +4,9 @@ GitHub Agent Orchestrator is a YAML-driven GitHub App webhook automation service
 
 ## Current Status
 
-The starter runtime is implemented with persistent workflow tracking. The repository now includes config loading and validation, GitHub App installation-token generation, detached execution with PID tracking, file-backed workflow state and append-only results logging, restart reconciliation, fixture-driven workflow tests, and CI for `npm run check`.
+The starter runtime is implemented with persistent workflow tracking and a GitHub-only ingress path.
+
+Plans 11-14 in `docs/PLAN.md` reset the public contract toward a provider-extensible ingress model. The code in `src/` is still on the current GitHub-only runtime until those plans land.
 
 ## Quick Start
 
@@ -23,16 +25,14 @@ npm start -- --config ./service.yml
 
 You can also set `GITHUB_AGENT_ORCHESTRATOR_CONFIG=./service.yml` instead of passing `--config`.
 
-## Config Model
+## Planned Provider Config
+
+This is the target config contract for the staged ingress refactor, not the currently implemented runtime.
 
 ```yaml
-clientId: your-github-app-client-id
-appId: 123456
-botHandle: github-agent-orchestrator
 server:
   host: 0.0.0.0
   port: 3000
-  webhookPath: /webhooks/github
 tracking:
   stateFile: workflow-state.json
   logFile: workflow-runs.jsonl
@@ -40,11 +40,20 @@ workspace:
   enabled: false
   baseDir: /var/lib/github-agent-orchestrator/workspaces
   cleanupAfterRun: false
-whitelist:
-  user:
-    - octocat
-  repo:
-    - acme/demo
+gh:
+  url: /gh-hook
+  clientId: your-github-app-client-id
+  appId: 123456
+  botHandle: github-agent-orchestrator
+  whitelist:
+    user:
+      - octocat
+    repo:
+      - acme/demo
+gitlab:
+  url: /gitlab-hook
+chat-bot:
+  url: /chat
 executors:
   codex:
     run: /path/to/codex --yolo -w ${workspace} exec ${prompt}
@@ -59,57 +68,56 @@ executors:
 workflow:
   issue-plan:
     on:
-      - issue:open
-      - issue:command:plan
+      - gh:issue:open
+      - gh:issue:command:plan
     use: codex
     prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Make an implementation plan and comment on this issue. Do not write any code.
   issue-implement:
     on:
-      - issue:command:approve
-      - issue:command:go
-      - issue:command:implement
-      - issue:command:code
+      - gh:issue:command:approve
+      - gh:issue:command:go
+      - gh:issue:command:implement
+      - gh:issue:command:code
     use: claude
     prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Assign the issue to yourself, implement your plan, and open a PR.
   issue-at:
     on:
-      - issue:comment
+      - gh:issue:comment
     use: codex
     prompt: Check subject ${in.subjectNumber} in repo ${in.repo}. Handle the user's request: ${in.content}. Do not write any code.
   pr-review:
     on:
-      - pr:comment
-      - pr:review
+      - gh:pr:comment
+      - gh:pr:review
     use: codex
     prompt: Check PR ${in.prNumber} in repo ${in.repo}. You received review input: ${in.content}.
 ```
 
 Relative `tracking` paths are resolved relative to the YAML config file location.
 
-## Workflow Model
+## Planned Workflow Model
 
-1. A GitHub App webhook arrives on `server.webhookPath`.
-2. The server verifies `X-Hub-Signature-256`, parses JSON, checks installation presence, and enforces `whitelist.user` and `whitelist.repo`.
-3. Supported events are normalized into canonical triggers such as `issue:open`, `issue:command:plan`, `issue:comment`, `pr:comment`, and `pr:review`.
-4. Workflows are evaluated in YAML declaration order and stop at the first match.
-5. The selected workflow renders a prompt from `${in.*}` fields.
-6. The service creates a queued workflow record, generates an installation access token for the webhook installation, launches the executor as a detached background process, and persists the PID plus artifact paths.
-7. A reconciliation loop updates the state file and append-only run log when detached runs complete. On restart, the service reloads the state file and recovers run status from saved PIDs and result files.
+1. `src/app/` registers provider handlers against provider-owned routes such as `gh.url` and `gitlab.url`.
+2. A provider receives the request, validates provider-specific policy, and calls `context.trigger(name, { in, env })` one or more times.
+3. `context.submit()` evaluates workflows in YAML declaration order and stops at the first match.
+4. The selected workflow renders a prompt from the matched trigger's `${in.*}` fields.
+5. The service creates a queued workflow record, launches the executor as a detached background process, and persists the PID plus artifact paths.
+6. A reconciliation loop updates the state file and append-only run log when detached runs complete. On restart, the service reloads the state file and recovers run status from saved PIDs and result files.
 
 ## Template Variables
 
 - Workflow prompts may use `${in.*}` variables.
-- Common aliases include `${in.repo}`, `${in.subjectNumber}`, `${in.prNumber}`, `${in.content}`, `${in.actorLogin}`, and `${in.eventName}`.
-- Structured fields include `${in.repository.fullName}`, `${in.subject.kind}`, `${in.comment.body}`, and `${in.review.state}`.
+- `in` is provider-defined. The core runtime does not require shared fields inside it.
+- GitHub-specific aliases such as `${in.repo}`, `${in.subjectNumber}`, `${in.prNumber}`, and `${in.content}` remain part of the migrated GitHub provider contract.
 - Executor commands may use `${prompt}` and `${workspace}`.
 - `${prompt}` and `${workspace}` are shell-escaped before command execution.
 - Missing or unsupported template variables fail fast.
 
-## Executor Environment
+## Trigger Environment
 
-- The service injects a GitHub App installation access token into every executor run as `GITHUB_TOKEN`.
-- The token is created from `clientId`, the app private key PEM, and the webhook installation ID.
-- Executors can use `GITHUB_TOKEN` to open PRs, comment, and make other GitHub API calls as the app installation.
+- Providers may attach per-request environment variables to the matched trigger through `context.trigger(..., { env })`.
+- The executor launch environment is merged as base process env, then executor static env, then trigger env.
+- The migrated GitHub provider will continue to inject `GITHUB_TOKEN` for executor runs that need GitHub App access.
 
 ## Persistent Tracking
 
@@ -120,9 +128,8 @@ Relative `tracking` paths are resolved relative to the YAML config file location
 
 ## Production Bootstrap
 
-- The service reads `GITHUB_WEBHOOK_SECRET` and `GITHUB_APP_PRIVATE_KEY_PATH` from `.env` or the ambient environment.
 - Start with `npm start -- --config /path/to/service.yml`.
-- Point your GitHub App webhook URL at `http(s)://<host>:<port><webhookPath>`.
+- Configure each provider's inbound URL path inside its provider section, for example `gh.url: /gh-hook`.
 - Executors are command templates only; containerization, sandboxing, and repo checkout strategy stay operator-defined.
 
 ## Repository Guide
