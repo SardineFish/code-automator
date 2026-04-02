@@ -32,6 +32,12 @@ export interface GitHubProviderConfig {
   appId: number;
   botHandle: string;
   whitelist: WhitelistConfig;
+  redelivery?: false | GitHubRedeliveryConfig;
+}
+
+export interface GitHubRedeliveryConfig {
+  intervalSeconds: number;
+  maxPerRun: number;
 }
 
 export interface ExecutorConfig {

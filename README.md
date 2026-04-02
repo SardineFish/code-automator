@@ -43,6 +43,9 @@ gh:
   clientId: your-github-app-client-id
   appId: 123456
   botHandle: github-agent-orchestrator
+  redelivery:
+    intervalSeconds: 300
+    maxPerRun: 20
   whitelist:
     user:
       - octocat
@@ -94,6 +97,7 @@ workflow:
 Relative `tracking` paths are resolved relative to the YAML config file location.
 
 The config loader preserves additional top-level provider sections, but the shipped startup wiring currently registers only the `gh` provider.
+`gh.redelivery` is provider-owned and defaults to `false`. When enabled, the service polls recent GitHub App webhook deliveries, retries unresolved failed delivery GUIDs once per GUID, and caps each scan at `maxPerRun` redelivery requests. On GitHub.com, only deliveries from the last 3 days are eligible for redelivery.
 
 ## Workflow Model
 
@@ -132,6 +136,7 @@ The config loader preserves additional top-level provider sections, but the ship
 - Set `GITHUB_WEBHOOK_SECRET` and `GITHUB_APP_PRIVATE_KEY_PATH` for the shipped GitHub provider.
 - Start with `npm start -- --config /path/to/service.yml`.
 - Configure each provider's inbound URL path inside its provider section, for example `gh.url: /gh-hook`.
+- Optional: enable `gh.redelivery` to start a background GitHub App delivery poller. The worker stores its checkpoint next to the tracked run artifacts under `tracking.stateFile`.
 - Executors are command templates only; containerization, sandboxing, and repo checkout strategy stay operator-defined.
 
 ## Repository Guide

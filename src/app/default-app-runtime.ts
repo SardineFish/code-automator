@@ -86,3 +86,5 @@ function resolveBaseEnv(baseEnv: NodeJS.ProcessEnv | undefined): NodeJS.ProcessE
   loadDotenv({ quiet: true });
   return process.env;
 }
+
+export { resolveBaseEnv };

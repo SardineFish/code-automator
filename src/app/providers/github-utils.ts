@@ -8,6 +8,7 @@ import type { GitHubReview } from "../../types/workflow-input.js";
 
 const SUPPORTED_COMMANDS = new Set(["plan", "approve", "go", "implement", "code"]);
 const installationTokenProviders = new Map<string, InstallationTokenProvider>();
+const appJwtProviders = new Map<string, GitHubAppJwtProvider>();
 
 export interface IssueMentionParseResult {
   hasMention: boolean;
@@ -136,6 +137,16 @@ export function getInstallationTokenProvider(privateKeyPath: string): Installati
   return provider;
 }
 
+export function getGitHubAppJwtProvider(privateKeyPath: string): GitHubAppJwtProvider {
+  let provider = appJwtProviders.get(privateKeyPath);
+  if (!provider) {
+    provider = createGitHubAppJwtProvider(privateKeyPath);
+    appJwtProviders.set(privateKeyPath, provider);
+  }
+
+  return provider;
+}
+
 export function requireEnv(env: NodeJS.ProcessEnv, key: "GITHUB_WEBHOOK_SECRET" | "GITHUB_APP_PRIVATE_KEY_PATH"): string {
   const value = env[key];
   if (!value || value.trim() === "") {
@@ -193,19 +204,33 @@ export interface InstallationTokenProvider {
   createInstallationToken(clientId: string, installationId: number): Promise<string>;
 }
 
+export interface GitHubAppJwtProvider {
+  createAppJwt(clientId: string): Promise<string>;
+}
+
 export function createInstallationTokenProvider(
   privateKeyPath: string,
   client: GitHubInstallationTokenClient
 ): InstallationTokenProvider {
-  let privateKeyPromise: Promise<string> | undefined;
+  const jwtProvider = createGitHubAppJwtProvider(privateKeyPath);
 
   return {
     async createInstallationToken(clientId, installationId) {
-      const privateKey = await loadPrivateKey(privateKeyPath, privateKeyPromise);
-      privateKeyPromise ??= Promise.resolve(privateKey);
-      const jwt = generateGitHubAppJwt(clientId, privateKey);
+      const jwt = await jwtProvider.createAppJwt(clientId);
       const response = await client.createInstallationAccessToken(jwt, installationId);
       return response.token;
+    }
+  };
+}
+
+export function createGitHubAppJwtProvider(privateKeyPath: string): GitHubAppJwtProvider {
+  let privateKeyPromise: Promise<string> | undefined;
+
+  return {
+    async createAppJwt(clientId) {
+      privateKeyPromise ??= loadPrivateKey(privateKeyPath);
+      const privateKey = await privateKeyPromise;
+      return generateGitHubAppJwt(clientId, privateKey);
     }
   };
 }
@@ -226,14 +251,7 @@ export function generateGitHubAppJwt(clientId: string, privateKeyPem: string, no
   return `${unsignedToken}.${signature}`;
 }
 
-async function loadPrivateKey(
-  privateKeyPath: string,
-  cachedPromise: Promise<string> | undefined
-): Promise<string> {
-  if (cachedPromise) {
-    return cachedPromise;
-  }
-
+async function loadPrivateKey(privateKeyPath: string): Promise<string> {
   return readFile(privateKeyPath, "utf8");
 }
 
