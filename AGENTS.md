@@ -19,16 +19,16 @@ Start here before changing code. This file is the stable table of contents for b
 - Keep stable design and product decisions in `docs/`.
 - Follow the commit rule in `docs/PLAN.md`: one numbered plan per commit. Do not batch multiple numbered plans into one commit.
 - Treat commit boundaries as rollback and review boundaries. Each numbered plan must stay independently testable so version control can isolate, revert, or inspect that step cleanly.
-- Treat the YAML service config as the source of truth for whitelist rules, executor templates, workspace settings, and trigger behavior.
+- Treat the YAML service config as the source of truth for provider sections, executor templates, workspace settings, and trigger behavior.
 - Preserve the declared layer order in `ARCHITECTURE.md`.
 - Add or update an executable check in `scripts/` when you introduce a new invariant.
 - Run `npm run check` before handing work off.
 
 ## Current State
 
-- The product target is a GitHub App webhook automation service called GitHub Agent Orchestrator.
-- The starter runtime is implemented in `src/` with config loading, webhook intake, trigger normalization, workflow selection, detached executor dispatch, persistent workflow tracking, restart recovery, GitHub App installation-token injection, and CI-backed verification.
-- The current documented design is a YAML-driven workflow engine with ordered workflows such as `issue-plan`, `issue-implement`, `issue-at`, and `pr-review`.
+- The product target is a YAML-driven workflow automation service called GitHub Agent Orchestrator with a provider-extensible ingress runtime.
+- The starter runtime is implemented in `src/` with shared app routing, provider handlers, trigger submission, workflow selection, detached executor dispatch, persistent workflow tracking, restart recovery, GitHub App installation-token injection, and CI-backed verification.
+- The current documented design is a provider-extensible ingress runtime with ordered workflows such as `issue-plan`, `issue-implement`, `issue-at`, and `pr-review`, and a shipped GitHub provider under `gh`.
 - Workflow routing is first-match-wins. Specific command workflows must appear before generic mention handlers.
 
 ## Key Paths

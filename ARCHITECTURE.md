@@ -1,6 +1,6 @@
 # Architecture
 
-This repository is being shaped into a TypeScript GitHub App webhook automation service. The structure stays strict so agents can navigate it mechanically as product code is added.
+This repository is being shaped into a TypeScript workflow automation service with a provider-extensible ingress runtime. The structure stays strict so agents can navigate it mechanically as product code is added.
 
 ## Layer Order
 
@@ -36,5 +36,5 @@ These rules describe the intended structure for product code.
 - Favor narrow service functions and explicit wiring in `src/app/` over hidden global state.
 - Keep executor invocation behind explicit service and provider boundaries.
 - Keep workspace lifecycle policy in config, repo, and service layers rather than hard-coding it in `src/app/`.
-- Normalize raw GitHub webhooks into canonical trigger keys such as `issue:open`, `issue:command:plan`, `issue:comment`, `pr:comment`, and `pr:review` before workflow selection.
+- Keep provider-specific request parsing and normalization at the ingress edge. Providers should submit canonical trigger keys such as `issue:open`, `issue:command:plan`, `issue:comment`, `pr:comment`, and `pr:review` into the shared workflow engine before workflow selection.
 - Keep workflow selection deterministic by evaluating configured workflows in declaration order and stopping at the first match.

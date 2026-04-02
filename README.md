@@ -1,6 +1,6 @@
 # GitHub Agent Orchestrator
 
-GitHub Agent Orchestrator is a YAML-driven GitHub App webhook automation service. It verifies webhook deliveries, filters them through repo and user whitelists, normalizes supported GitHub events into canonical triggers, renders prompts from normalized workflow input, launches executor commands as detached background runs, persists workflow status to files, and recovers tracking after restart.
+GitHub Agent Orchestrator is a YAML-driven workflow automation service with a provider-extensible ingress runtime. It currently ships with a GitHub App provider that validates webhook deliveries, applies provider-specific whitelist rules, submits canonical workflow triggers, launches executor commands as detached background runs, persists workflow status to files, and recovers tracking after restart.
 
 ## Current Status
 
@@ -106,7 +106,7 @@ The config loader preserves additional top-level provider sections, but the ship
 
 - Workflow prompts may use `${in.*}` variables.
 - `in` is provider-defined. The core runtime does not require shared fields inside it.
-- GitHub-specific aliases such as `${in.repo}`, `${in.subjectNumber}`, `${in.prNumber}`, and `${in.content}` remain part of the migrated GitHub provider contract.
+- GitHub-specific aliases such as `${in.repo}`, `${in.subjectNumber}`, `${in.prNumber}`, and `${in.content}` remain part of the current GitHub provider contract.
 - Executor commands may use `${prompt}` and `${workspace}`.
 - `${prompt}` and `${workspace}` are shell-escaped before command execution.
 - Missing or unsupported template variables fail fast.
@@ -115,7 +115,7 @@ The config loader preserves additional top-level provider sections, but the ship
 
 - Providers may attach per-request environment variables to the matched trigger through `context.trigger(..., { env })`.
 - The executor launch environment is merged as base process env, then executor static env, then trigger env.
-- The migrated GitHub provider will continue to inject `GITHUB_TOKEN` for executor runs that need GitHub App access.
+- The shipped GitHub provider injects `GITHUB_TOKEN` for executor runs that need GitHub App access.
 
 ## Persistent Tracking
 
