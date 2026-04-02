@@ -38,3 +38,13 @@ These rules describe the intended structure for product code.
 - Keep workspace lifecycle policy in config, repo, and service layers rather than hard-coding it in `src/app/`.
 - Keep provider-specific request parsing and normalization at the ingress edge. Providers should submit canonical trigger keys such as `issue:open`, `issue:command:plan`, `issue:comment`, `pr:comment`, and `pr:review` into the shared workflow engine before workflow selection.
 - Keep workflow selection deterministic by evaluating configured workflows in declaration order and stopping at the first match.
+
+## Provider Boundary Rules
+
+- Treat providers as extensions. The core engine should not need to know provider-specific request shapes, auth flows, API clients, or input aliases.
+- Keep provider-specific parsing, normalization, API calls, signature checks, and provider env handling inside provider-owned code.
+- Do not move provider-specific logic into `src/service/`, `src/types/`, `src/config/`, `src/repo/`, or `src/runtime/` just to make it feel more reusable.
+- If a helper mentions a provider by name, it belongs in provider scope unless at least two providers already use the exact same contract.
+- Prefer deleting provider-only abstraction layers over renaming or relocating them. A direct handler is better than a factory, builder, or intermediate delivery object unless shared pressure is already real.
+- When a provider needs extra workflow input fields, add only the fields required now. Do not pre-build a generic shape for imagined future providers.
+- Keep the extension seam small and explicit: registration, route path, trigger submission, and shared execution/tracking are core concerns; everything else should stay on the provider side of the boundary.

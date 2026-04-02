@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const disallowedLayers = ["types", "config", "repo", "runtime", "ui"];
 const violations = [];
+const legacyProviderDirs = [
+  path.join(rootDir, "src", "service", "github"),
+  path.join(rootDir, "src", "service", "normalize"),
+  path.join(rootDir, "src", "providers", "github")
+];
 
 for (const layer of disallowedLayers) {
   for (const filePath of walk(path.join(rootDir, "src", layer))) {
@@ -21,6 +26,20 @@ if (violations.length > 0) {
 
   for (const violation of violations) {
     process.stderr.write(`- Non-service layer imports a provider: ${violation}\n`);
+  }
+
+  process.exit(1);
+}
+
+const legacyProviderPaths = legacyProviderDirs.filter((dir) => exists(dir));
+
+if (legacyProviderPaths.length > 0) {
+  process.stderr.write("Architecture check failed:\n");
+
+  for (const dir of legacyProviderPaths) {
+    process.stderr.write(
+      `- Provider-specific implementation escaped provider scope: ${path.relative(rootDir, dir)}\n`
+    );
   }
 
   process.exit(1);
@@ -46,4 +65,13 @@ function* walk(dir) {
 
 function readDir(dir) {
   return readdirSync(dir, { withFileTypes: true });
+}
+
+function exists(targetPath) {
+  try {
+    readdirSync(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
 }
