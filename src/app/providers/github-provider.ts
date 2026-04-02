@@ -5,6 +5,7 @@ import { verifyWebhookSignature } from "../../service/security/verify-webhook-si
 import type { AppContext } from "../../types/runtime.js";
 import {
   addCommentReaction,
+  addThreadComment,
   getHeader,
   getInstallationTokenProvider,
   mapReviewState,
@@ -101,67 +102,83 @@ export async function githubProvider(
   const installationToken = await getInstallationTokenProvider(requireEnv(context.env, "GITHUB_APP_PRIVATE_KEY_PATH"))
     .createInstallationToken(github.clientId, gate.installationId);
   const triggerEnv = { GH_TOKEN: installationToken };
+  const reportTarget = getReportTarget(eventName, issue, pullRequest);
   let reactionTarget:
     | { subjectId: number; kind: "issue" | "issue_comment" | "pull_request_review_comment" }
     | undefined;
 
-  // Route the GitHub event to the smallest set of canonical workflow triggers.
-  if (eventName === "issues" && action === "opened") {
-    const issueId = readId(issue);
-    if (!issueId) {
-      return respond(response, 202, "Accepted");
-    }
-
-    context.trigger("issue:open", {
-      in: {
-        event: "issue:open",
-        user,
-        repo,
-        issueId,
-        content: readString(issue ?? {}, "body")
-      },
-      env: triggerEnv
-    });
-    const subjectId = readInteger(issue ?? {}, "number");
-    if (subjectId !== undefined) {
-      reactionTarget = { subjectId, kind: "issue" };
-    }
-  } else if (eventName === "issue_comment" && action === "created") {
-    const issueId = readId(issue);
-    if (!issueId || !comment) {
-      return respond(response, 202, "Accepted");
-    }
-
-    const content = readString(comment, "body") ?? "";
-    const commentId = readInteger(comment, "id");
-    if (readObject(issue ?? {}, "pull_request")) {
-      // Issue comments on pull requests map directly to PR comment workflows.
-      context.trigger("pr:comment", {
-        in: {
-          event: "pr:comment",
-          user,
-          repo,
-          prId: issueId,
-          content
-        },
-        env: triggerEnv
-      });
-      if (commentId !== undefined) {
-        reactionTarget = { subjectId: commentId, kind: "issue_comment" };
-      }
-    } else {
-      // Plain issue comments only count when they explicitly mention the bot.
-      const mention = parseIssueMention(content, github.botHandle);
-      if (!mention.hasMention) {
-        requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "not_mentioned" });
+  try {
+    // Route the GitHub event to the smallest set of canonical workflow triggers.
+    if (eventName === "issues" && action === "opened") {
+      const issueId = readId(issue);
+      if (!issueId) {
         return respond(response, 202, "Accepted");
       }
 
-      if (mention.command) {
-        // Command-style mentions can target a specific command workflow first.
-        context.trigger(`issue:command:${mention.command}`, {
+      context.trigger("issue:open", {
+        in: {
+          event: "issue:open",
+          user,
+          repo,
+          issueId,
+          content: readString(issue ?? {}, "body")
+        },
+        env: triggerEnv
+      });
+      const subjectId = readInteger(issue ?? {}, "number");
+      if (subjectId !== undefined) {
+        reactionTarget = { subjectId, kind: "issue" };
+      }
+    } else if (eventName === "issue_comment" && action === "created") {
+      const issueId = readId(issue);
+      if (!issueId || !comment) {
+        return respond(response, 202, "Accepted");
+      }
+
+      const content = readString(comment, "body") ?? "";
+      const commentId = readInteger(comment, "id");
+      if (readObject(issue ?? {}, "pull_request")) {
+        // Issue comments on pull requests map directly to PR comment workflows.
+        context.trigger("pr:comment", {
           in: {
-            event: `issue:command:${mention.command}`,
+            event: "pr:comment",
+            user,
+            repo,
+            prId: issueId,
+            content
+          },
+          env: triggerEnv
+        });
+        if (commentId !== undefined) {
+          reactionTarget = { subjectId: commentId, kind: "issue_comment" };
+        }
+      } else {
+        // Plain issue comments only count when they explicitly mention the bot.
+        const mention = parseIssueMention(content, github.botHandle);
+        if (!mention.hasMention) {
+          requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "not_mentioned" });
+          return respond(response, 202, "Accepted");
+        }
+
+        if (mention.command) {
+          // Command-style mentions can target a specific command workflow first.
+          context.trigger(`issue:command:${mention.command}`, {
+            in: {
+              event: `issue:command:${mention.command}`,
+              user,
+              repo,
+              issueId,
+              content: mention.content,
+              command: mention.command
+            },
+            env: triggerEnv
+          });
+        }
+
+        // Every valid issue mention also emits the generic issue-comment trigger.
+        context.trigger("issue:comment", {
+          in: {
+            event: "issue:comment",
             user,
             repo,
             issueId,
@@ -170,89 +187,142 @@ export async function githubProvider(
           },
           env: triggerEnv
         });
+        if (commentId !== undefined) {
+          reactionTarget = { subjectId: commentId, kind: "issue_comment" };
+        }
       }
+    } else if (eventName === "pull_request_review_comment" && action === "created") {
+      const prId = readId(pullRequest);
+      if (!prId || !comment) {
+        return respond(response, 202, "Accepted");
+      }
+      const commentId = readInteger(comment, "id");
 
-      // Every valid issue mention also emits the generic issue-comment trigger.
-      context.trigger("issue:comment", {
+      context.trigger("pr:comment", {
         in: {
-          event: "issue:comment",
+          event: "pr:comment",
           user,
           repo,
-          issueId,
-          content: mention.content,
-          command: mention.command
+          prId,
+          content: readString(comment, "body")
         },
         env: triggerEnv
       });
       if (commentId !== undefined) {
-        reactionTarget = { subjectId: commentId, kind: "issue_comment" };
+        reactionTarget = { subjectId: commentId, kind: "pull_request_review_comment" };
+      }
+    } else if (eventName === "pull_request_review") {
+      const prId = readId(pullRequest);
+      if (!prId || !review) {
+        return respond(response, 202, "Accepted");
+      }
+
+      const reviewState = readString(review, "state");
+      const prReview = mapReviewState(reviewState);
+
+      context.trigger("pr:review", {
+        in: {
+          event: "pr:review",
+          user,
+          repo,
+          prId,
+          prReview,
+          content: readString(review, "body")?.trim() || prReview || reviewState
+        },
+        env: triggerEnv
+      });
+    } else {
+      requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "unsupported_event" });
+      return respond(response, 202, "Accepted");
+    }
+
+    // The shared engine handles workflow selection, execution, and tracking.
+    const result = await context.submit();
+
+    if (result.status === "matched" && reactionTarget) {
+      try {
+        await addCommentReaction({
+          repoFullName: repo,
+          subjectId: reactionTarget.subjectId,
+          reaction: "eyes",
+          token: installationToken,
+          kind: reactionTarget.kind
+        });
+      } catch (error) {
+        requestLog.warn({
+          message: "failed to add comment reaction",
+          errorMessage: error instanceof Error ? error.message : "Unknown reaction error."
+        });
       }
     }
-  } else if (eventName === "pull_request_review_comment" && action === "created") {
-    const prId = readId(pullRequest);
-    if (!prId || !comment) {
-      return respond(response, 202, "Accepted");
-    }
 
-    context.trigger("pr:comment", {
-      in: {
-        event: "pr:comment",
-        user,
-        repo,
-        prId,
-        content: readString(comment, "body")
-      },
-      env: triggerEnv
+    requestLog.info({ message: "processed webhook delivery", ...result });
+    respond(response, 202, result.status === "failed" ? "Failed" : "Accepted");
+  } catch (error) {
+    requestLog.error({
+      message: "github provider handler failed",
+      errorMessage: error instanceof Error ? error.message : "Unknown GitHub provider error."
     });
-    const commentId = readInteger(comment, "id");
-    if (commentId !== undefined) {
-      reactionTarget = { subjectId: commentId, kind: "pull_request_review_comment" };
-    }
-  } else if (eventName === "pull_request_review") {
-    const prId = readId(pullRequest);
-    if (!prId || !review) {
-      return respond(response, 202, "Accepted");
+
+    if (reportTarget) {
+      try {
+        await addThreadComment({
+          repoFullName: repo,
+          subjectId: reportTarget.subjectId,
+          body: formatRuntimeErrorComment(error),
+          token: installationToken,
+          kind: reportTarget.kind
+        });
+      } catch (reportError) {
+        requestLog.warn({
+          message: "failed to post GitHub runtime error comment",
+          errorMessage: reportError instanceof Error ? reportError.message : "Unknown GitHub reporting error."
+        });
+      }
     }
 
-    const reviewState = readString(review, "state");
-    const prReview = mapReviewState(reviewState);
+    respond(response, 500, "Internal Server Error");
+  }
+}
 
-    context.trigger("pr:review", {
-      in: {
-        event: "pr:review",
-        user,
-        repo,
-        prId,
-        prReview,
-        content: readString(review, "body")?.trim() || prReview || reviewState
-      },
-      env: triggerEnv
-    });
-  } else {
-    requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "unsupported_event" });
-    return respond(response, 202, "Accepted");
+function getReportTarget(
+  eventName: string,
+  issue: Record<string, unknown> | null,
+  pullRequest: Record<string, unknown> | null
+): { subjectId: number; kind: "issue" | "pull_request" } | undefined {
+  if (eventName === "issues" || eventName === "issue_comment") {
+    const subjectId = readInteger(issue ?? {}, "number");
+    if (subjectId === undefined) {
+      return undefined;
+    }
+
+    return {
+      subjectId,
+      kind: readObject(issue ?? {}, "pull_request") ? "pull_request" : "issue"
+    };
   }
 
-  // The shared engine handles workflow selection, execution, and tracking.
-  const result = await context.submit();
-
-  if (result.status === "matched" && reactionTarget) {
-    try {
-      await addCommentReaction({
-        repoFullName: repo,
-        subjectId: reactionTarget.subjectId,
-        reaction: "eyes",
-        token: installationToken,
-        kind: reactionTarget.kind
-      });
-    } catch (error) {
-      requestLog.warn({
-        message: "failed to add comment reaction",
-        errorMessage: error instanceof Error ? error.message : "Unknown reaction error."
-      });
+  if (eventName === "pull_request_review" || eventName === "pull_request_review_comment") {
+    const subjectId = readInteger(pullRequest ?? {}, "number");
+    if (subjectId === undefined) {
+      return undefined;
     }
+
+    return { subjectId, kind: "pull_request" };
   }
 
-  requestLog.info({ message: "processed webhook delivery", ...result });
-  respond(response, 202, result.status === "failed" ? "Failed" : "Accepted");
+  return undefined;
+}
+
+function formatRuntimeErrorComment(error: unknown): string {
+  const fallback = error instanceof Error ? error.message : "Unknown GitHub provider error.";
+  const details = error instanceof Error && error.stack ? error.stack : fallback;
+
+  return [
+    "Coding Automator hit a JavaScript runtime error while handling this webhook.",
+    "",
+    "```text",
+    details,
+    "```"
+  ].join("\n");
 }

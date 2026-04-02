@@ -78,7 +78,7 @@ test("GitHub provider ignores plain issue comments without a leading mention", a
 });
 
 test("GitHub provider treats removed issue command aliases as generic mentions", async (t) => {
-  const { commands, reactionCalls, started, url } = await startGitHubApp(t);
+  const { commands, commentCalls, reactionCalls, started, url } = await startGitHubApp(t);
   const response = await signedRequest(
     url,
     issueCommentPayload("@github-agent-orchestrator /go"),
@@ -89,13 +89,14 @@ test("GitHub provider treats removed issue command aliases as generic mentions",
   await waitForCondition(() => started.length === 1);
   assert.deepEqual(commands, ["codex exec 'Handle /go'"]);
   assert.deepEqual(started, ["codex exec 'Handle /go'"]);
+  assert.deepEqual(commentCalls, []);
   assert.deepEqual(reactionCalls, [
     "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes"
   ]);
 });
 
 test("GitHub provider routes the documented workflows through the provider app", async (t) => {
-  const { commands, envs, reactionCalls, started, url } = await startGitHubApp(t);
+  const { commands, commentCalls, envs, reactionCalls, started, url } = await startGitHubApp(t);
   const scenarios = [
     {
       name: "issue-plan",
@@ -144,6 +145,7 @@ test("GitHub provider routes the documented workflows through the provider app",
   assert.deepEqual(commands, scenarios.map((scenario) => scenario.expectedCommand));
   assert.deepEqual(started, scenarios.map((scenario) => scenario.expectedCommand));
   assert.ok(envs.every((env) => env.GH_TOKEN === "installation-token"));
+  assert.deepEqual(commentCalls, []);
   assert.deepEqual(reactionCalls, [
     "POST https://api.github.com/repos/acme/demo/issues/7/reactions eyes",
     "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes",
@@ -153,7 +155,40 @@ test("GitHub provider routes the documented workflows through the provider app",
   ]);
 });
 
-async function startGitHubApp(t: TestContext) {
+test("GitHub provider reports issue-path runtime failures on the issue thread", async (t) => {
+  const { commentCalls, reactionCalls, started, url } = await startGitHubApp(t, {
+    createQueuedRunError: new Error("queue failed")
+  });
+  const response = await signedRequest(url, issueOpenedPayload(), "issues");
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(started, []);
+  assert.deepEqual(reactionCalls, []);
+  assert.equal(commentCalls.length, 1);
+  assert.match(commentCalls[0] ?? "", /^POST https:\/\/api\.github\.com\/repos\/acme\/demo\/issues\/7\/comments /);
+  assert.match(commentCalls[0] ?? "", /Error: queue failed/);
+  assert.match(commentCalls[0] ?? "", /\bat\b/);
+});
+
+test("GitHub provider reports PR-path runtime failures on the PR thread", async (t) => {
+  const { commentCalls, reactionCalls, started, url } = await startGitHubApp(t, {
+    createQueuedRunError: new Error("queue failed")
+  });
+  const response = await signedRequest(url, reviewPayload("needs work", "changes_requested"), "pull_request_review");
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(started, []);
+  assert.deepEqual(reactionCalls, []);
+  assert.equal(commentCalls.length, 1);
+  assert.match(commentCalls[0] ?? "", /^POST https:\/\/api\.github\.com\/repos\/acme\/demo\/issues\/8\/comments /);
+  assert.match(commentCalls[0] ?? "", /Error: queue failed/);
+  assert.match(commentCalls[0] ?? "", /\bat\b/);
+});
+
+async function startGitHubApp(
+  t: TestContext,
+  options?: { createQueuedRunError?: Error }
+) {
   const config = {
     ...createServiceConfig(),
     server: {
@@ -168,6 +203,7 @@ async function startGitHubApp(t: TestContext) {
   }
   const env = await createGitHubAppEnv();
   const commands: string[] = [];
+  const commentCalls: string[] = [];
   const envs: NodeJS.ProcessEnv[] = [];
   const reactionCalls: string[] = [];
   const started: string[] = [];
@@ -193,6 +229,14 @@ async function startGitHubApp(t: TestContext) {
     if (url.includes("/reactions")) {
       reactionCalls.push(`${init?.method ?? "GET"} ${url} ${JSON.parse(String(init?.body)).content}`);
       return new Response(JSON.stringify({ id: 1, content: "eyes" }), {
+        status: 201,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    if (/\/issues\/\d+\/comments$/.test(url)) {
+      commentCalls.push(`${init?.method ?? "GET"} ${url} ${JSON.parse(String(init?.body)).body}`);
+      return new Response(JSON.stringify({ id: 2 }), {
         status: 201,
         headers: { "content-type": "application/json" }
       });
@@ -231,6 +275,9 @@ async function startGitHubApp(t: TestContext) {
     workflowTracker: {
       async initialize() {},
       async createQueuedRun() {
+        if (options?.createQueuedRunError) {
+          throw options.createQueuedRunError;
+        }
         return createQueuedRunRecord(`run-${runCount + 1}`);
       },
       async updateQueuedRun() {
@@ -272,6 +319,7 @@ async function startGitHubApp(t: TestContext) {
   return {
     server,
     commands,
+    commentCalls,
     envs,
     reactionCalls,
     started,
