@@ -93,6 +93,21 @@ test("parseServiceConfig accepts executor workspace overrides", () => {
   assert.equal(parsed.executors.claude.workspace, false);
 });
 
+test("parseServiceConfig accepts executor workspace key mappings", () => {
+  const parsed = parseServiceConfig(
+    validConfig.replace(
+      "    timeoutMs: 900000",
+      "    timeoutMs: 900000\n    workspace:\n      baseDir: /tmp/codex-workspaces\n      key: ${in.repo}#${in.issueId}"
+    ),
+    "/tmp/configs/test.yml"
+  );
+
+  assert.deepEqual(parsed.executors.codex.workspace, {
+    baseDir: "/tmp/codex-workspaces",
+    key: "${in.repo}#${in.issueId}"
+  });
+});
+
 test("parseServiceConfig rejects unknown workflow executor", () => {
   const invalid = validConfig.replace("use: claude", "use: unknown");
   assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), {
@@ -168,6 +183,19 @@ test("parseServiceConfig rejects invalid executor workspace values", () => {
     assert.match(
       error.message,
       /executors\.claude\.workspace: Expected a boolean or non-empty string\./
+    );
+    return true;
+  });
+});
+
+test("parseServiceConfig rejects empty executor workspace mappings", () => {
+  const invalid = validConfig.replace("    run: claude run ${prompt}", "    run: claude run ${prompt}\n    workspace: {}");
+
+  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(
+      error.message,
+      /executors\.claude\.workspace: Expected a boolean, non-empty string, or mapping with at least one of 'baseDir' or 'key'\./
     );
     return true;
   });

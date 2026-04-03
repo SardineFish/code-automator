@@ -9,6 +9,7 @@ import test, { type TestContext } from "node:test";
 import { App } from "../../src/app/app.js";
 import { githubProvider } from "../../src/app/providers/github-provider.js";
 import {
+  issueClosedPayload,
   issueCommentPayload,
   issueOpenedPayload,
   reviewCommentPayload,
@@ -167,6 +168,78 @@ test("GitHub provider accepts bare slash issue commands when requireMention is f
   await waitForCondition(() => started.length === 1);
   assert.deepEqual(commands, ["codex exec 'Plan issue 7'"]);
   assert.deepEqual(started, ["codex exec 'Plan issue 7'"]);
+});
+
+test("GitHub provider routes /reset as an issue command while the issue is open", async (t) => {
+  const { commands, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      config.workflow = [
+        {
+          name: "issue-reset",
+          on: ["issue:command:reset"],
+          use: "codex",
+          prompt: "Reset issue ${in.issueId}"
+        },
+        ...config.workflow
+      ];
+    }
+  });
+
+  const response = await signedRequest(url, issueCommentPayload("@github-agent-orchestrator /reset"), "issue_comment");
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Reset issue 7'"]);
+  assert.deepEqual(started, ["codex exec 'Reset issue 7'"]);
+});
+
+test("GitHub provider routes issues.closed to issue:close workflows", async (t) => {
+  const { commands, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      config.workflow = [
+        {
+          name: "issue-close",
+          on: ["issue:close"],
+          use: "codex",
+          prompt: "Close issue ${in.issueId}"
+        },
+        ...config.workflow
+      ];
+    }
+  });
+
+  const response = await signedRequest(url, issueClosedPayload(), "issues");
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Close issue 7'"]);
+  assert.deepEqual(started, ["codex exec 'Close issue 7'"]);
+});
+
+test("GitHub provider ignores closed issue comments instead of dispatching normal issue workflows", async (t) => {
+  const { commands, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      config.workflow = [
+        {
+          name: "issue-reset",
+          on: ["issue:command:reset"],
+          use: "codex",
+          prompt: "Reset issue ${in.issueId}"
+        },
+        ...config.workflow
+      ];
+    }
+  });
+
+  const response = await signedRequest(
+    url,
+    issueCommentPayload("@github-agent-orchestrator /reset", { issueState: "closed" }),
+    "issue_comment"
+  );
+
+  assert.equal(response.status, 202);
+  assert.deepEqual(commands, []);
+  assert.deepEqual(started, []);
 });
 
 test("GitHub provider emits issue:at for inline mentions", async (t) => {
@@ -625,15 +698,29 @@ async function startGitHubApp(
       async createRunWorkspace() {
         return "";
       },
+      async ensureReusableWorkspace() {
+        return "";
+      },
       async removeWorkspace() {}
     },
     workflowTracker: {
       async initialize() {},
-      async createQueuedRun(context) {
+      async createQueuedRun(context, details) {
         if (options?.createQueuedRunError) {
           throw options.createQueuedRunError;
         }
-        return createQueuedRunRecord(`run-${runCount + 1}`, context);
+        return {
+          record: createQueuedRunRecord(`run-${runCount + 1}`, {
+            ...context,
+            workspacePath: details.workspacePath,
+            workspaceKey: details.workspaceKey,
+            launch: details.launch
+          }),
+          shouldLaunchNow: true
+        };
+      },
+      async getLaunchableQueuedRuns() {
+        return [];
       },
       subscribeTerminalEvents(runId, listeners) {
         terminalListeners.set(runId, {
@@ -657,7 +744,9 @@ async function startGitHubApp(
       async markTerminal() {
         throw new Error("should not be called");
       },
-      async reconcileActiveRuns() {}
+      async reconcileActiveRuns() {
+        return [];
+      }
     },
     logSink,
     baseEnv: {

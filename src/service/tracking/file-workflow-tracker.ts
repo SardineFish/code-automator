@@ -10,6 +10,7 @@ import type {
 } from "../../types/tracking.js";
 import type { WorkflowTrackerRepo } from "../../repo/tracking/file-workflow-tracker-repo.js";
 import { logCompletedRun } from "./log-completed-run.js";
+import { releaseKeyedWorkspaceRun, reserveKeyedWorkspaceRun } from "./keyed-workspace-queue.js";
 import { cleanupWorkspace, getCompletedStatus, readPid, requireActiveRun } from "./tracker-helpers.js";
 import type { WorkflowTracker } from "./workflow-tracker.js";
 import { buildWorkflowTerminalEvent, emitWorkflowTerminalEvent } from "./workflow-terminal-events.js";
@@ -21,7 +22,7 @@ export function createFileWorkflowTracker(
   repo: WorkflowTrackerRepo,
   logSink: LogSink
 ): WorkflowTracker {
-  let state: WorkflowTrackerState = { version: 1, activeRuns: {} };
+  let state: WorkflowTrackerState = { version: 2, activeRuns: {}, keyedWorkspaces: {} };
   const terminalListeners = new Map<string, AppContextTerminalListeners>();
   let queue = Promise.resolve();
 
@@ -30,7 +31,7 @@ export function createFileWorkflowTracker(
       await repo.ensureFiles(config);
       state = await repo.loadState(config);
     },
-    async createQueuedRun(context, workspacePath) {
+    async createQueuedRun(context, details) {
       const runId = randomUUID();
       const artifacts = await repo.createArtifacts(config, runId);
       const now = new Date().toISOString();
@@ -40,15 +41,29 @@ export function createFileWorkflowTracker(
         status: "queued",
         createdAt: now,
         updatedAt: now,
-        workspacePath,
+        workspacePath: details.workspacePath,
+        workspaceKey: details.workspaceKey,
+        launch: details.launch,
         artifacts
       };
 
       return withLock(async () => {
         state.activeRuns[runId] = record;
+        const shouldLaunchNow =
+          details.workspaceKey === undefined
+            ? true
+            : reserveKeyedWorkspaceRun(state.keyedWorkspaces, details.workspaceKey, runId);
         await repo.saveState(config, state);
-        return record;
+        return {
+          record,
+          shouldLaunchNow
+        };
       });
+    },
+    async getLaunchableQueuedRuns() {
+      return withLock(async () =>
+        Object.values(state.activeRuns).filter((record) => isLaunchableQueuedRun(record))
+      );
     },
     subscribeTerminalEvents(runId, listeners) {
       const nextListeners = cloneTerminalListeners(listeners);
@@ -116,18 +131,20 @@ export function createFileWorkflowTracker(
 
         if (!record) {
           terminalListeners.delete(runId);
-          return null;
+          return { completed: null, releasedRuns: [] };
         }
 
         const completedAt = details.completedAt ?? details.process?.completedAt ?? new Date().toISOString();
+        const { launch: _launch, ...completedRecordBase } = record;
         const completedRecord: CompletedWorkflowRunRecord = {
-          ...record,
+          ...completedRecordBase,
           status,
           updatedAt: completedAt,
           completedAt,
           process: details.process,
           errorMessage: details.errorMessage
         };
+        const releasedRuns = releasePendingRuns(record.workspaceKey, runId);
 
         delete state.activeRuns[runId];
         await repo.saveState(config, state);
@@ -139,22 +156,35 @@ export function createFileWorkflowTracker(
         if (listeners && terminalEvent) {
           emitWorkflowTerminalEvent(logSink, runId, listeners, terminalEvent);
         }
-        return completedRecord;
+        return {
+          completed: completedRecord,
+          releasedRuns
+        };
       });
     },
     async reconcileActiveRuns(processRunner, workspaceRepo, workspace) {
       const snapshot = await withLock(async () => Object.values(state.activeRuns));
+      const releasedRuns: ActiveWorkflowRunRecord[] = [];
+      const releasedRunIds = new Set<string>();
 
       for (const record of snapshot) {
+        if (releasedRunIds.has(record.runId)) {
+          continue;
+        }
+
         try {
           const completed = await processRunner.readDetachedResult(record.artifacts.resultFilePath);
 
           if (completed) {
-            await cleanupWorkspace(workspaceRepo, workspace, record.workspacePath);
-            await this.markTerminal(record.runId, getCompletedStatus(completed), {
+            await cleanupWorkspace(workspaceRepo, workspace, record.workspacePath, record.workspaceKey);
+            const transition = await this.markTerminal(record.runId, getCompletedStatus(completed), {
               process: completed,
               completedAt: completed.completedAt
             });
+            releasedRuns.push(...transition.releasedRuns);
+            for (const releasedRun of transition.releasedRuns) {
+              releasedRunIds.add(releasedRun.runId);
+            }
             continue;
           }
 
@@ -179,10 +209,18 @@ export function createFileWorkflowTracker(
             continue;
           }
 
-          await cleanupWorkspace(workspaceRepo, workspace, record.workspacePath);
-          await this.markTerminal(record.runId, "lost", {
+          if (isPendingKeyedRun(record)) {
+            continue;
+          }
+
+          await cleanupWorkspace(workspaceRepo, workspace, record.workspacePath, record.workspaceKey);
+          const transition = await this.markTerminal(record.runId, "lost", {
             errorMessage: "Tracked executor process is no longer running and no result file was found."
           });
+          releasedRuns.push(...transition.releasedRuns);
+          for (const releasedRun of transition.releasedRuns) {
+            releasedRunIds.add(releasedRun.runId);
+          }
         } catch (error) {
           logSink.error({
             message: "workflow reconciliation item failed",
@@ -191,8 +229,37 @@ export function createFileWorkflowTracker(
           });
         }
       }
+
+      return releasedRuns;
     }
   };
+
+  function releasePendingRuns(workspaceKey: string | undefined, runId: string): ActiveWorkflowRunRecord[] {
+    if (workspaceKey === undefined) {
+      return [];
+    }
+
+    const nextRunId = releaseKeyedWorkspaceRun(state.keyedWorkspaces, workspaceKey, runId);
+
+    if (!nextRunId) {
+      return [];
+    }
+
+    const nextRun = state.activeRuns[nextRunId];
+    return nextRun ? [nextRun] : [];
+  }
+
+  function isPendingKeyedRun(record: ActiveWorkflowRunRecord): boolean {
+    if (record.status !== "queued" || record.workspaceKey === undefined) {
+      return false;
+    }
+
+    return state.keyedWorkspaces[record.workspaceKey]?.activeRunId !== record.runId;
+  }
+
+  function isLaunchableQueuedRun(record: ActiveWorkflowRunRecord): boolean {
+    return record.status === "queued" && !isPendingKeyedRun(record);
+  }
 
   function withLock<T>(task: () => Promise<T>): Promise<T> {
     const next = queue.then(task);

@@ -6,7 +6,10 @@ import { createServiceConfig } from "../../fixtures/service-config.js";
 import { createNoOpLogSink } from "../../fixtures/log-sink.js";
 import type { ActiveWorkflowRunRecord, WorkflowRunArtifacts } from "../../../src/types/tracking.js";
 
-function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
+function createQueuedRunRecord(
+  runId: string,
+  overrides: Partial<ActiveWorkflowRunRecord> = {}
+): ActiveWorkflowRunRecord {
   const artifacts: WorkflowRunArtifacts = {
     runDir: `/tmp/${runId}`,
     wrapperScriptPath: `/tmp/${runId}/run.sh`,
@@ -26,7 +29,8 @@ function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
     matchedTrigger: "issue:command:plan",
     executorName: "codex",
     workspacePath: "",
-    artifacts
+    artifacts,
+    ...overrides
   };
 }
 
@@ -79,13 +83,27 @@ test("processTriggerSubmission launches the first matching workflow with matched
       async createRunWorkspace() {
         return "";
       },
+      async ensureReusableWorkspace() {
+        return "";
+      },
       async removeWorkspace() {}
     },
     workflowTracker: {
       async initialize() {},
-      async createQueuedRun(context) {
+      async createQueuedRun(context, details) {
         queuedContext = context;
-        return createQueuedRunRecord("run-1");
+        return {
+          record: createQueuedRunRecord("run-1", {
+            ...context,
+            workspacePath: details.workspacePath,
+            workspaceKey: details.workspaceKey,
+            launch: details.launch
+          }),
+          shouldLaunchNow: true
+        };
+      },
+      async getLaunchableQueuedRuns() {
+        return [];
       },
       subscribeTerminalEvents(runId, listeners) {
         subscribedRuns.push(runId);
@@ -105,7 +123,9 @@ test("processTriggerSubmission launches the first matching workflow with matched
       async markTerminal() {
         throw new Error("should not be called");
       },
-      async reconcileActiveRuns() {}
+      async reconcileActiveRuns() {
+        return [];
+      }
     },
     logSink: createNoOpLogSink(),
     baseEnv: { BASE: "1" },
@@ -162,12 +182,18 @@ test("processTriggerSubmission ignores empty trigger submissions", async () => {
       async createRunWorkspace() {
         throw new Error("should not run");
       },
+      async ensureReusableWorkspace() {
+        throw new Error("should not run");
+      },
       async removeWorkspace() {}
     },
     workflowTracker: {
       async initialize() {},
       async createQueuedRun() {
         throw new Error("should not run");
+      },
+      async getLaunchableQueuedRuns() {
+        return [];
       },
       subscribeTerminalEvents() {
         throw new Error("should not run");
@@ -184,7 +210,9 @@ test("processTriggerSubmission ignores empty trigger submissions", async () => {
       async markTerminal() {
         throw new Error("should not run");
       },
-      async reconcileActiveRuns() {}
+      async reconcileActiveRuns() {
+        return [];
+      }
     },
     logSink: createNoOpLogSink()
   });
@@ -232,12 +260,25 @@ test("processTriggerSubmission prepares an executor-specific workspace before la
         assert.equal(baseDir, "/tmp/codex-parent");
         return "/tmp/codex-parent/run-1";
       },
+      async ensureReusableWorkspace() {
+        throw new Error("should not be called");
+      },
       async removeWorkspace() {}
     },
     workflowTracker: {
       async initialize() {},
-      async createQueuedRun() {
-        return createQueuedRunRecord("run-2");
+      async createQueuedRun(_context, details) {
+        return {
+          record: createQueuedRunRecord("run-2", {
+            workspacePath: details.workspacePath,
+            workspaceKey: details.workspaceKey,
+            launch: details.launch
+          }),
+          shouldLaunchNow: true
+        };
+      },
+      async getLaunchableQueuedRuns() {
+        return [];
       },
       subscribeTerminalEvents() {
         return () => undefined;
@@ -253,7 +294,9 @@ test("processTriggerSubmission prepares an executor-specific workspace before la
       async markTerminal() {
         throw new Error("should not be called");
       },
-      async reconcileActiveRuns() {},
+      async reconcileActiveRuns() {
+        return [];
+      },
       async getActiveRunCount() {
         return 0;
       }
@@ -267,6 +310,106 @@ test("processTriggerSubmission prepares an executor-specific workspace before la
   assert.deepEqual(startedCwds, ["/tmp/codex-parent/run-1"]);
   assert.equal(running[0], "codex -w '/tmp/codex-parent/run-1' exec 'Plan issue 7'");
   assert.equal(running[1], "run-2:codex -w '/tmp/codex-parent/run-1' exec 'Plan issue 7'");
+});
+
+test("processTriggerSubmission renders workspace keys and leaves blocked keyed runs queued", async () => {
+  const config = createServiceConfig();
+  config.executors.codex.workspace = {
+    baseDir: "/tmp/reusable-workspaces",
+    key: "${in.repo}#${in.issueId}"
+  };
+
+  let queuedDetails:
+    | Parameters<NonNullable<Parameters<typeof processTriggerSubmission>[0]["workflowTracker"]["createQueuedRun"]>>[1]
+    | undefined;
+  let startDetachedCalled = false;
+  const result = await processTriggerSubmission({
+    config,
+    source: "/gh-hook",
+    triggers: [
+      {
+        name: "issue:command:plan",
+        input: {
+          event: "issue:command:plan",
+          issueId: "7",
+          repo: "acme/demo",
+          user: "octocat"
+        },
+        env: { GH_TOKEN: "token-1" }
+      }
+    ],
+    processRunner: {
+      async run() {
+        throw new Error("should not be called");
+      },
+      async startDetached() {
+        startDetachedCalled = true;
+        throw new Error("should not be called");
+      },
+      isProcessRunning() {
+        return true;
+      },
+      async readDetachedResult() {
+        return null;
+      }
+    },
+    workspaceRepo: {
+      async createRunWorkspace() {
+        throw new Error("should not be called");
+      },
+      async ensureReusableWorkspace() {
+        throw new Error("should not be called");
+      },
+      async removeWorkspace() {}
+    },
+    workflowTracker: {
+      async initialize() {},
+      async createQueuedRun(_context, details) {
+        queuedDetails = details;
+        return {
+          record: createQueuedRunRecord("run-3", {
+            workspacePath: details.workspacePath,
+            workspaceKey: details.workspaceKey,
+            launch: details.launch
+          }),
+          shouldLaunchNow: false
+        };
+      },
+      async getLaunchableQueuedRuns() {
+        return [];
+      },
+      subscribeTerminalEvents() {
+        return () => undefined;
+      },
+      async updateQueuedRun() {
+        throw new Error("should not be called");
+      },
+      async markRunning() {
+        throw new Error("should not be called");
+      },
+      async markTerminal() {
+        throw new Error("should not be called");
+      },
+      async reconcileActiveRuns() {
+        return [];
+      },
+      async getActiveRunCount() {
+        return 0;
+      }
+    },
+    logSink: createNoOpLogSink()
+  });
+
+  assert.equal(result.status, "matched");
+  assert.equal(startDetachedCalled, false);
+  assert.deepEqual(queuedDetails, {
+    workspacePath: "",
+    workspaceKey: "acme/demo#7",
+    launch: {
+      prompt: "Plan issue 7",
+      triggerEnv: { GH_TOKEN: "token-1" }
+    }
+  });
 });
 
 async function waitForCondition(check: () => boolean, timeoutMs = 1000): Promise<void> {

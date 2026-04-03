@@ -113,12 +113,21 @@ function createRuntime(
       async createRunWorkspace() {
         return "";
       },
+      async ensureReusableWorkspace() {
+        return "";
+      },
       async removeWorkspace() {}
     },
     workflowTracker: {
       async initialize() {},
       async createQueuedRun() {
-        return createQueuedRunRecord("run-1");
+        return {
+          record: createQueuedRunRecord("run-1"),
+          shouldLaunchNow: false
+        };
+      },
+      async getLaunchableQueuedRuns() {
+        return [];
       },
       subscribeTerminalEvents(runId, listeners) {
         subscriptions.push({
@@ -140,9 +149,11 @@ function createRuntime(
         return {} as never;
       },
       async markTerminal() {
-        return null;
+        return { completed: null, releasedRuns: [] };
       },
-      async reconcileActiveRuns() {}
+      async reconcileActiveRuns() {
+        return [];
+      }
     },
     logSink: createNoOpLogSink(),
     baseEnv: {},

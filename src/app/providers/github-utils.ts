@@ -6,7 +6,7 @@ import { RequestBodyError, readRequestBody } from "../../runtime/http/read-reque
 import type { WebhookGateContext } from "../../types/runtime.js";
 import type { GitHubReview } from "../../types/workflow-input.js";
 
-const SUPPORTED_COMMANDS = new Set(["plan", "approve"]);
+const SUPPORTED_COMMANDS = new Set(["plan", "approve", "reset"]);
 const installationTokenProviders = new Map<string, InstallationTokenProvider>();
 const appJwtProviders = new Map<string, GitHubAppJwtProvider>();
 

@@ -35,8 +35,8 @@ test("fileWorkflowTracker emits one completed event for terminal success", async
     completedAt
   });
 
-  assert.equal(firstResult?.status, "succeeded");
-  assert.equal(secondResult, null);
+  assert.equal(firstResult.completed?.status, "succeeded");
+  assert.equal(secondResult.completed, null);
   assert.deepEqual(events, [
     {
       runId: queued.runId,
@@ -171,7 +171,7 @@ test("fileWorkflowTracker listener failures do not break terminal persistence", 
     process: createProcessResult(queued, completedAt, 0)
   });
 
-  assert.equal(result?.status, "succeeded");
+  assert.equal(result.completed?.status, "succeeded");
   assert.equal(await tracker.getActiveRunCount(), 0);
 
   const logLines = (await readFile(path.join(dir, "runs.jsonl"), "utf8"))
@@ -250,6 +250,9 @@ test("fileWorkflowTracker does not replay terminal listeners across restart reco
       async createRunWorkspace() {
         throw new Error("should not be called");
       },
+      async ensureReusableWorkspace() {
+        throw new Error("should not be called");
+      },
       async removeWorkspace() {}
     },
     {
@@ -275,7 +278,7 @@ function createTracker(dir: string, logRecords?: CapturedLogRecord[]): WorkflowT
 
 async function createQueuedRun(tracker: WorkflowTracker) {
   await tracker.initialize();
-  return tracker.createQueuedRun(
+  const queued = await tracker.createQueuedRun(
     {
       deliveryId: "delivery-1",
       eventName: "issues",
@@ -286,12 +289,20 @@ async function createQueuedRun(tracker: WorkflowTracker) {
       actorLogin: "octocat",
       installationId: 42
     },
-    ""
+    {
+      workspacePath: "",
+      launch: {
+        prompt: "Plan issue 7",
+        triggerEnv: {}
+      }
+    }
   );
+
+  return queued.record;
 }
 
 function createProcessResult(
-  queued: Awaited<ReturnType<WorkflowTracker["createQueuedRun"]>>,
+  queued: Awaited<ReturnType<typeof createQueuedRun>>,
   completedAt: string,
   exitCode: number
 ): ProcessRunResult {

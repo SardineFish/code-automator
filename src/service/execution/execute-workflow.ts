@@ -1,10 +1,12 @@
 import type { ProcessRunner } from "../../providers/process/process-runner.js";
 import type { WorkspaceRepo } from "../../repo/workspace/workspace-repo.js";
-import type { ExecutorConfig, ServiceConfig } from "../../types/config.js";
+import type { ServiceConfig } from "../../types/config.js";
 import type { WorkflowLaunchResult } from "../../types/execution.js";
 import type { WorkflowRunArtifacts } from "../../types/tracking.js";
 import { renderExecutorCommand } from "../template/render-workflow-template.js";
+import { resolveExecutorWorkspace } from "./resolve-executor-workspace.js";
 import { toShellLiteral } from "./shell-escape.js";
+import { escapeWorkspaceKeyForPath } from "./workspace-key.js";
 
 export interface ExecuteWorkflowOptions {
   config: ServiceConfig;
@@ -14,6 +16,7 @@ export interface ExecuteWorkflowOptions {
   installationToken?: string;
   triggerEnv?: Record<string, string>;
   workspacePath?: string;
+  workspaceKey?: string;
   workspaceRepo: WorkspaceRepo;
   processRunner: ProcessRunner;
   baseEnv?: NodeJS.ProcessEnv;
@@ -31,7 +34,8 @@ export async function executeWorkflow(options: ExecuteWorkflowOptions): Promise<
   try {
     const command = renderExecutorCommand(executor.run, {
       prompt: toShellLiteral(options.prompt),
-      workspace: toShellLiteral(workspacePath, { allowEmpty: true })
+      workspace: toShellLiteral(workspacePath, { allowEmpty: true }),
+      workspaceKey: toShellLiteral(options.workspaceKey ?? "", { allowEmpty: true })
     });
     const env = {
       ...options.baseEnv,
@@ -76,6 +80,13 @@ async function resolveWorkspace(options: ExecuteWorkflowOptions): Promise<string
     return "";
   }
 
+  if (options.workspaceKey !== undefined) {
+    return options.workspaceRepo.ensureReusableWorkspace(
+      workspace.baseDir,
+      escapeWorkspaceKeyForPath(options.workspaceKey)
+    );
+  }
+
   return options.workspaceRepo.createRunWorkspace(workspace.baseDir);
 }
 
@@ -87,7 +98,7 @@ async function cleanupWorkspace(
   options: ExecuteWorkflowOptions,
   workspacePath: string
 ): Promise<Error | null> {
-  if (!options.config.workspace.cleanupAfterRun || workspacePath === "") {
+  if (!options.config.workspace.cleanupAfterRun || workspacePath === "" || options.workspaceKey !== undefined) {
     return null;
   }
 
@@ -99,48 +110,4 @@ async function cleanupWorkspace(
       `Workspace cleanup failed: ${error instanceof Error ? error.message : "Unknown cleanup error."}`
     );
   }
-}
-
-function resolveExecutorWorkspace(
-  config: ServiceConfig,
-  executorName: string
-): { enabled: boolean; baseDir: string } {
-  const executor = config.executors[executorName];
-
-  if (!executor) {
-    throw new Error("Unknown executor.");
-  }
-
-  return resolveExecutorWorkspaceSetting(config.workspace, executor);
-}
-
-function resolveExecutorWorkspaceSetting(
-  workspace: ServiceConfig["workspace"],
-  executor: ExecutorConfig
-): { enabled: boolean; baseDir: string } {
-  if (executor.workspace === undefined) {
-    return {
-      enabled: workspace.enabled,
-      baseDir: workspace.baseDir
-    };
-  }
-
-  if (executor.workspace === false) {
-    return {
-      enabled: false,
-      baseDir: workspace.baseDir
-    };
-  }
-
-  if (executor.workspace === true) {
-    return {
-      enabled: true,
-      baseDir: workspace.baseDir
-    };
-  }
-
-  return {
-    enabled: true,
-    baseDir: executor.workspace
-  };
 }

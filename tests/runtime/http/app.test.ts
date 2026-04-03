@@ -147,12 +147,18 @@ function createRuntimeOptions() {
       async createRunWorkspace() {
         throw new Error("should not run");
       },
+      async ensureReusableWorkspace() {
+        throw new Error("should not run");
+      },
       async removeWorkspace() {}
     },
     workflowTracker: {
       async initialize() {},
       async createQueuedRun() {
         throw new Error("should not run");
+      },
+      async getLaunchableQueuedRuns() {
+        return [];
       },
       subscribeTerminalEvents() {
         return () => undefined;
@@ -169,7 +175,9 @@ function createRuntimeOptions() {
       async markTerminal() {
         throw new Error("should not run");
       },
-      async reconcileActiveRuns() {}
+      async reconcileActiveRuns() {
+        return [];
+      }
     },
     logSink: createNoOpLogSink(),
     reconcileIntervalMs: 0

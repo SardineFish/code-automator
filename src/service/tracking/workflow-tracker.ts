@@ -4,6 +4,9 @@ import type { AppContextTerminalListeners } from "../../types/runtime.js";
 import type {
   ActiveWorkflowRunRecord,
   CompletedWorkflowRunRecord,
+  QueuedWorkflowRunTransition,
+  WorkflowTerminalTransition,
+  WorkflowRunLaunchData,
   WorkflowRunContext
 } from "../../types/tracking.js";
 import type { ProcessRunner } from "../../providers/process/process-runner.js";
@@ -11,7 +14,11 @@ import type { WorkspaceRepo } from "../../repo/workspace/workspace-repo.js";
 
 export interface WorkflowTracker {
   initialize(): Promise<void>;
-  createQueuedRun(context: WorkflowRunContext, workspacePath: string): Promise<ActiveWorkflowRunRecord>;
+  createQueuedRun(
+    context: WorkflowRunContext,
+    details: { workspacePath: string; workspaceKey?: string; launch: WorkflowRunLaunchData }
+  ): Promise<QueuedWorkflowRunTransition>;
+  getLaunchableQueuedRuns(): Promise<ActiveWorkflowRunRecord[]>;
   subscribeTerminalEvents(runId: string, listeners: AppContextTerminalListeners): () => void;
   updateQueuedRun(runId: string, details: { workspacePath: string }): Promise<ActiveWorkflowRunRecord>;
   getActiveRunCount(): Promise<number>;
@@ -23,6 +30,10 @@ export interface WorkflowTracker {
     runId: string,
     status: CompletedWorkflowRunRecord["status"],
     details: { process?: ProcessRunResult; errorMessage?: string; completedAt?: string }
-  ): Promise<CompletedWorkflowRunRecord | null>;
-  reconcileActiveRuns(processRunner: ProcessRunner, workspaceRepo: WorkspaceRepo, workspace: WorkspaceConfig): Promise<void>;
+  ): Promise<WorkflowTerminalTransition>;
+  reconcileActiveRuns(
+    processRunner: ProcessRunner,
+    workspaceRepo: WorkspaceRepo,
+    workspace: WorkspaceConfig
+  ): Promise<ActiveWorkflowRunRecord[]>;
 }

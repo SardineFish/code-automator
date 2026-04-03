@@ -138,6 +138,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Emit process-local terminal `completed` and `error` callbacks from the tracker while keeping persistence authoritative and isolating listener failures behind warning logs.
 - Extend the GitHub provider to post queued terminal `failed`, `error`, and `lost` outcomes back to the issue or pull request thread with focused regression coverage.
 
+### Plan 21: Keyed reusable workspaces and issue lifecycle cleanup [done]
+
+- Extend executor workspace config to support an input-rendered `workspace.key`, reusable workspace directories, and executor command interpolation with `${workspaceKey}`.
+- Persist keyed queue ownership plus pending launch context so runs that share one workspace key serialize cleanly across executors and survive restart.
+- Add Codex reuse and reset wrappers, then route GitHub `issue:close` and `/reset` through the documented cleanup path with focused regression coverage.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

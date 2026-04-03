@@ -43,6 +43,9 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
         calls.workspaceBaseDir = baseDir;
         return "/tmp/workspace-1";
       },
+      async ensureReusableWorkspace() {
+        throw new Error("should not be called");
+      },
       async removeWorkspace() {}
     },
     processRunner: {
@@ -81,6 +84,68 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
   assert.deepEqual(calls.artifacts, artifacts);
 });
 
+test("executeWorkflow reuses a keyed workspace and renders ${workspaceKey}", async () => {
+  const config = createServiceConfig();
+  config.workspace.enabled = false;
+  config.executors.codex.run = "codex -w ${workspace} --key ${workspaceKey} exec ${prompt}";
+  config.executors.codex.workspace = {
+    baseDir: "/tmp/reusable-workspaces",
+    key: "${in.repo}#${in.issueId}"
+  };
+
+  const calls: {
+    command?: string;
+    cwd?: string;
+    directoryName?: string;
+    removedWorkspace?: string;
+  } = {};
+  const result = await executeWorkflow({
+    config,
+    executorName: "codex",
+    prompt: "Continue work",
+    artifacts,
+    workspaceKey: "acme/demo#7",
+    workspaceRepo: {
+      async createRunWorkspace() {
+        throw new Error("should not be called");
+      },
+      async ensureReusableWorkspace(baseDir, directoryName) {
+        assert.equal(baseDir, "/tmp/reusable-workspaces");
+        calls.directoryName = directoryName;
+        return `/tmp/reusable-workspaces/${directoryName}`;
+      },
+      async removeWorkspace(workspacePath) {
+        calls.removedWorkspace = workspacePath;
+      }
+    },
+    processRunner: {
+      async run() {
+        throw new Error("should not be called");
+      },
+      async startDetached(command, options) {
+        calls.command = command;
+        calls.cwd = options.cwd;
+        return { pid: 4243, startedAt: "2026-04-02T00:00:00.000Z" };
+      },
+      isProcessRunning() {
+        return true;
+      },
+      async readDetachedResult() {
+        return null;
+      }
+    }
+  });
+
+  assert.equal(result.workspacePath, "/tmp/reusable-workspaces/acme_demo#7");
+  assert.equal(calls.directoryName, "acme_demo#7");
+  assert.equal(calls.cwd, "/tmp/reusable-workspaces/acme_demo#7");
+  assert.equal(
+    calls.command,
+    "codex -w '/tmp/reusable-workspaces/acme_demo#7' --key 'acme/demo#7' exec 'Continue work'"
+  );
+  assert.equal(calls.removedWorkspace, undefined);
+});
+
 test("executeWorkflow skips workspace creation when the executor disables it", async () => {
   const config = createServiceConfig();
   config.workspace.enabled = true;
@@ -95,6 +160,10 @@ test("executeWorkflow skips workspace creation when the executor disables it", a
     artifacts,
     workspaceRepo: {
       async createRunWorkspace() {
+        createdWorkspace = true;
+        return "/tmp/workspace-should-not-exist";
+      },
+      async ensureReusableWorkspace() {
         createdWorkspace = true;
         return "/tmp/workspace-should-not-exist";
       },
@@ -133,6 +202,9 @@ test("executeWorkflow throws for unknown executors", async () => {
         installationToken: "installation-token",
         workspaceRepo: {
           async createRunWorkspace() {
+            throw new Error("should not be called");
+          },
+          async ensureReusableWorkspace() {
             throw new Error("should not be called");
           },
           async removeWorkspace() {}
@@ -179,6 +251,9 @@ test("executeWorkflow reports workspace creation failures", async () => {
           async createRunWorkspace() {
             throw new Error("mkdir failed");
           },
+          async ensureReusableWorkspace() {
+            throw new Error("mkdir failed");
+          },
           async removeWorkspace() {}
         },
         processRunner: {
@@ -221,6 +296,9 @@ test("executeWorkflow reports cleanup failures after launch failure", async () =
         installationToken: "installation-token",
         workspaceRepo: {
           async createRunWorkspace() {
+            return "/tmp/run-2";
+          },
+          async ensureReusableWorkspace() {
             return "/tmp/run-2";
           },
           async removeWorkspace() {
