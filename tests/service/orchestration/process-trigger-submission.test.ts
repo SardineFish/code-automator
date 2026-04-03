@@ -215,7 +215,10 @@ test("processTriggerSubmission prepares an executor-specific workspace before la
       async markTerminal() {
         throw new Error("should not be called");
       },
-      async reconcileActiveRuns() {}
+      async reconcileActiveRuns() {},
+      async getActiveRunCount() {
+        return 0;
+      }
     },
     logSink: createNoOpLogSink()
   });

@@ -102,8 +102,6 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
       }
 
       started = true;
-      void this.runOnce().catch((error) => logWorkerError(log, error));
-
       timer = setInterval(() => {
         if (stopped) {
           return;

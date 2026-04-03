@@ -114,7 +114,7 @@ Relative `tracking` paths resolve from the YAML file location. The config loader
 
 ## Optional Redelivery Polling
 
-`gh.redelivery` is provider-owned and defaults to `false`. When enabled, the service polls recent GitHub App webhook deliveries, retries unresolved failed delivery GUIDs once per GUID, and caps each scan at `maxPerRun` redelivery requests. On GitHub.com, only deliveries from the last 3 days are eligible for redelivery.
+`gh.redelivery` is provider-owned and defaults to `false`. When enabled, the service polls recent GitHub App webhook deliveries, retries unresolved failed delivery GUIDs once per GUID, and caps each scan at `maxPerRun` redelivery requests. The first automatic scan starts after `intervalSeconds` elapses, not immediately at process boot. On GitHub.com, only deliveries from the last 3 days are eligible for redelivery.
 
 ```yaml
 gh:
