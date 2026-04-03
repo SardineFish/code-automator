@@ -29,7 +29,10 @@ import type {
 } from "../../src/types/runtime.js";
 import type { ActiveWorkflowRunRecord, WorkflowRunArtifacts } from "../../src/types/tracking.js";
 
-function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
+function createQueuedRunRecord(
+  runId: string,
+  context: Partial<ActiveWorkflowRunRecord> = {}
+): ActiveWorkflowRunRecord {
   const artifacts: WorkflowRunArtifacts = {
     runDir: `/tmp/${runId}`,
     wrapperScriptPath: `/tmp/${runId}/run.sh`,
@@ -49,7 +52,8 @@ function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
     matchedTrigger: "issue:open",
     executorName: "codex",
     workspacePath: "",
-    artifacts
+    artifacts,
+    ...context
   };
 }
 
@@ -279,7 +283,7 @@ test("GitHub provider routes approved PR reviews when ignoreApprovalReview is fa
   await waitForCondition(() => started.length === 1);
   assert.deepEqual(commands, ["codex exec 'Review PR 8: ship it'"]);
   assert.deepEqual(started, ["codex exec 'Review PR 8: ship it'"]);
-  assert.deepEqual(reactionCalls, []);
+  assert.deepEqual(reactionCalls, ["POST https://api.github.com/graphql EYES PRR_kwDOdemo202"]);
 });
 
 test("GitHub provider keeps changes-requested reviews actionable", async (t) => {
@@ -290,7 +294,7 @@ test("GitHub provider keeps changes-requested reviews actionable", async (t) => 
   await waitForCondition(() => started.length === 1);
   assert.deepEqual(commands, ["codex exec 'Review PR 8: request-changes'"]);
   assert.deepEqual(started, ["codex exec 'Review PR 8: request-changes'"]);
-  assert.deepEqual(reactionCalls, []);
+  assert.deepEqual(reactionCalls, ["POST https://api.github.com/graphql EYES PRR_kwDOdemo202"]);
 });
 
 test("GitHub provider routes the documented workflows through the provider app", async (t) => {
@@ -349,6 +353,7 @@ test("GitHub provider routes the documented workflows through the provider app",
     "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes",
     "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes",
     "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes",
+    "POST https://api.github.com/graphql EYES PRR_kwDOdemo202",
     "POST https://api.github.com/repos/acme/demo/pulls/comments/101/reactions eyes"
   ]);
 });
@@ -384,7 +389,8 @@ test("GitHub provider reports PR-path runtime failures on the PR thread", async 
 });
 
 test("GitHub provider reports queued terminal failures on the same thread", async (t) => {
-  const { commentCalls, emitTrackedError, installationTokenCalls, started, url } = await startGitHubApp(t);
+  const { commentCalls, emitTrackedError, installationTokenCalls, reactionCalls, started, url } =
+    await startGitHubApp(t);
   const response = await signedRequest(
     url,
     issueCommentPayload("@github-agent-orchestrator /approve"),
@@ -395,6 +401,9 @@ test("GitHub provider reports queued terminal failures on the same thread", asyn
   await waitForCondition(() => started.length === 1);
   assert.deepEqual(commentCalls, []);
   assert.equal(installationTokenCalls.length, 1);
+  assert.deepEqual(reactionCalls, [
+    "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes"
+  ]);
 
   await emitTrackedError("run-1", {
     runId: "run-1",
@@ -406,36 +415,108 @@ test("GitHub provider reports queued terminal failures on the same thread", asyn
     error: new Error("Workflow exited with code 17.")
   });
 
+  await waitForCondition(() => commentCalls.length === 1 && reactionCalls.length === 2);
   assert.equal(installationTokenCalls.length, 2);
   assert.equal(commentCalls.length, 1);
+  assert.deepEqual(reactionCalls, [
+    "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes",
+    "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions rocket"
+  ]);
   assert.match(commentCalls[0] ?? "", /^POST https:\/\/api\.github\.com\/repos\/acme\/demo\/issues\/7\/comments /);
   assert.match(commentCalls[0] ?? "", /queued this workflow/);
   assert.match(commentCalls[0] ?? "", /Workflow exited with code 17\./);
 });
 
-test("GitHub provider does not report terminal success for queued workflows", async (t) => {
-  const { commentCalls, emitTrackedCompleted, installationTokenCalls, started, url } =
-    await startGitHubApp(t);
-  const response = await signedRequest(
-    url,
-    issueCommentPayload("@github-agent-orchestrator /approve"),
-    "issue_comment"
-  );
+test("GitHub provider adds rocket reactions for successful queued workflows on supported sources", async (t) => {
+  const { commentCalls, emitTrackedCompleted, installationTokenCalls, reactionCalls, started, url } =
+    await startGitHubApp(t, {
+      customizeConfig(config) {
+        if (!config.gh) {
+          throw new Error("Missing test GitHub config.");
+        }
 
-  assert.equal(response.status, 202);
-  await waitForCondition(() => started.length === 1);
+        config.gh.ignoreApprovalReview = false;
+      }
+    });
+  const scenarios = [
+    {
+      eventName: "issues",
+      payload: issueOpenedPayload(),
+      runId: "run-1",
+      terminalEvent: {
+        runId: "run-1",
+        workflowName: "issue-plan",
+        matchedTrigger: "issue:open" as const,
+        executorName: "codex",
+        completedAt: "2026-04-02T00:00:10.000Z",
+        status: "succeeded" as const
+      }
+    },
+    {
+      eventName: "issue_comment",
+      payload: issueCommentPayload("looks good", { pullRequest: true }),
+      runId: "run-2",
+      terminalEvent: {
+        runId: "run-2",
+        workflowName: "pr-comment",
+        matchedTrigger: "pr:comment" as const,
+        executorName: "codex",
+        completedAt: "2026-04-02T00:00:11.000Z",
+        status: "succeeded" as const
+      }
+    },
+    {
+      eventName: "pull_request_review_comment",
+      payload: reviewCommentPayload("needs work"),
+      runId: "run-3",
+      terminalEvent: {
+        runId: "run-3",
+        workflowName: "pr-comment",
+        matchedTrigger: "pr:comment" as const,
+        executorName: "codex",
+        completedAt: "2026-04-02T00:00:12.000Z",
+        status: "succeeded" as const
+      }
+    },
+    {
+      eventName: "pull_request_review",
+      payload: reviewPayload("ship it", "approved"),
+      runId: "run-4",
+      terminalEvent: {
+        runId: "run-4",
+        workflowName: "pr-review",
+        matchedTrigger: "pr:review" as const,
+        executorName: "codex",
+        completedAt: "2026-04-02T00:00:13.000Z",
+        status: "succeeded" as const
+      }
+    }
+  ];
 
-  await emitTrackedCompleted("run-1", {
-    runId: "run-1",
-    workflowName: "issue-implement",
-    matchedTrigger: "issue:command:approve",
-    executorName: "claude",
-    completedAt: "2026-04-02T00:00:10.000Z",
-    status: "succeeded"
-  });
+  for (const scenario of scenarios) {
+    const response = await signedRequest(url, scenario.payload, scenario.eventName);
+    assert.equal(response.status, 202);
+  }
 
+  await waitForCondition(() => started.length === scenarios.length);
+
+  for (const scenario of scenarios) {
+    await emitTrackedCompleted(scenario.runId, scenario.terminalEvent);
+  }
+
+  await waitForCondition(() => reactionCalls.length === scenarios.length * 2);
   assert.deepEqual(commentCalls, []);
-  assert.equal(installationTokenCalls.length, 1);
+  assert.equal(installationTokenCalls.length, scenarios.length * 2);
+  assert.deepEqual(reactionCalls, [
+    "POST https://api.github.com/repos/acme/demo/issues/7/reactions eyes",
+    "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes",
+    "POST https://api.github.com/repos/acme/demo/pulls/comments/101/reactions eyes",
+    "POST https://api.github.com/graphql EYES PRR_kwDOdemo202",
+    "POST https://api.github.com/repos/acme/demo/issues/7/reactions rocket",
+    "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions rocket",
+    "POST https://api.github.com/repos/acme/demo/pulls/comments/101/reactions rocket",
+    "POST https://api.github.com/graphql ROCKET PRR_kwDOdemo202"
+  ]);
 });
 
 async function startGitHubApp(
@@ -482,6 +563,19 @@ async function startGitHubApp(
     if (url.startsWith("https://api.github.com/app/installations/")) {
       installationTokenCalls.push(url);
       return new Response(JSON.stringify({ token: "installation-token" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    if (url === "https://api.github.com/graphql") {
+      const body = JSON.parse(String(init?.body)) as {
+        variables?: { content?: string; subjectId?: string };
+      };
+      reactionCalls.push(
+        `${init?.method ?? "GET"} ${url} ${body.variables?.content ?? ""} ${body.variables?.subjectId ?? ""}`.trim()
+      );
+      return new Response(JSON.stringify({ data: { addReaction: { reaction: { content: body.variables?.content } } } }), {
         status: 200,
         headers: { "content-type": "application/json" }
       });
@@ -535,11 +629,11 @@ async function startGitHubApp(
     },
     workflowTracker: {
       async initialize() {},
-      async createQueuedRun() {
+      async createQueuedRun(context) {
         if (options?.createQueuedRunError) {
           throw options.createQueuedRunError;
         }
-        return createQueuedRunRecord(`run-${runCount + 1}`);
+        return createQueuedRunRecord(`run-${runCount + 1}`, context);
       },
       subscribeTerminalEvents(runId, listeners) {
         terminalListeners.set(runId, {

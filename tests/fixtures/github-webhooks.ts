@@ -92,6 +92,7 @@ export function reviewPayload(body: string, state = "changes_requested") {
     },
     review: {
       id: 202,
+      node_id: "PRR_kwDOdemo202",
       body,
       state,
       html_url: "https://github.com/acme/demo/pull/8#pullrequestreview-202"

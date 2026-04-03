@@ -10,9 +10,10 @@ import { createNoOpLogSink } from "../../fixtures/log-sink.js";
 
 test("fileWorkflowTracker persists running runs and appends terminal results", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "gao-tracker-"));
+  const statePath = path.join(dir, "state.json");
   const tracker = createFileWorkflowTracker(
     {
-      stateFile: path.join(dir, "state.json"),
+      stateFile: statePath,
       logFile: path.join(dir, "runs.jsonl")
     },
     fileWorkflowTrackerRepo,
@@ -35,6 +36,11 @@ test("fileWorkflowTracker persists running runs and appends terminal results", a
     ""
   );
   assert.equal(await tracker.getActiveRunCount(), 1);
+
+  const queuedState = JSON.parse(await readFile(statePath, "utf8")) as {
+    activeRuns: Record<string, { installationId?: number }>;
+  };
+  assert.equal(queuedState.activeRuns[queued.runId]?.installationId, 42);
 
   await tracker.markRunning(queued.runId, {
     pid: 4242,
@@ -65,12 +71,17 @@ test("fileWorkflowTracker persists running runs and appends terminal results", a
   const logLines = (await readFile(path.join(dir, "runs.jsonl"), "utf8"))
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line) as { status: string; runId: string });
+    .map((line) => JSON.parse(line) as {
+      status: string;
+      runId: string;
+      installationId?: number;
+    });
 
   assert.deepEqual(state.activeRuns, {});
   assert.equal(logLines.length, 1);
   assert.equal(logLines[0].runId, queued.runId);
   assert.equal(logLines[0].status, "succeeded");
+  assert.equal(logLines[0].installationId, 42);
 });
 
 test("fileWorkflowTracker reconciles active runs from result files and missing pids", async () => {

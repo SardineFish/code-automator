@@ -8,8 +8,9 @@ import {
   formatWorkflowTerminalErrorComment,
   getReportTarget
 } from "./github-provider-reporting.js";
+import type { GitHubReactionTarget } from "./github-utils.js";
 import {
-  addCommentReaction,
+  addGitHubReaction,
   addThreadComment,
   getHeader,
   getInstallationTokenProvider,
@@ -105,33 +106,72 @@ export async function githubProvider(
     requestLog.info({ message: "ignored delivery rejected by whitelist", reason: rejectionReason });
     return respond(response, 202, "Ignored");
   }
+  const gateContext = gate;
 
   const action = readString(payload, "action");
   const issue = readObject(payload, "issue");
   const comment = readObject(payload, "comment");
   const review = readObject(payload, "review");
   const pullRequest = readObject(payload, "pull_request");
-  const user = gate.actorLogin;
-  const repo = gate.repoFullName;
+  const deliveryId = getHeader(request, "x-github-delivery");
+  const user = gateContext.actorLogin;
+  const repo = gateContext.repoFullName;
   const privateKeyPath = requireEnv(context.env, "GITHUB_APP_PRIVATE_KEY_PATH");
   const installationTokenProvider = getInstallationTokenProvider(privateKeyPath);
   const installationToken = await installationTokenProvider.createInstallationToken(
     github.clientId,
-    gate.installationId
+    gateContext.installationId
   );
   const triggerEnv = { GH_TOKEN: installationToken };
   const reportTarget = getReportTarget(eventName, issue, pullRequest);
-  let reactionTarget:
-    | { subjectId: number; kind: "issue" | "issue_comment" | "pull_request_review_comment" }
-    | undefined;
+  let reactionTarget: GitHubReactionTarget | undefined;
+
+  function triggerWorkflow(name: Parameters<AppContext["trigger"]>[0], input: Record<string, unknown>): void {
+    context.trigger(name, {
+      in: {
+        ...input,
+        ...(deliveryId ? { deliveryId } : {}),
+        installationId: gateContext.installationId
+      },
+      env: triggerEnv
+    });
+  }
+
+  async function addWorkflowCompletionReaction(runId: string, reactionToken?: string): Promise<void> {
+    if (!reactionTarget) {
+      return;
+    }
+
+    try {
+      const token =
+        reactionToken ??
+        (await installationTokenProvider.createInstallationToken(
+          github.clientId,
+          gateContext.installationId
+        ));
+      await addGitHubReaction({
+        repoFullName: repo,
+        reaction: "rocket",
+        token,
+        target: reactionTarget
+      });
+    } catch (error) {
+      requestLog.warn({
+        message: "failed to add workflow completion reaction",
+        runId,
+        errorMessage: error instanceof Error ? error.message : "Unknown reaction error."
+      });
+    }
+  }
 
   if (reportTarget) {
     context.on("error", async (event) => {
       try {
         const reportToken = await installationTokenProvider.createInstallationToken(
           github.clientId,
-          gate.installationId
+          gateContext.installationId
         );
+        await addWorkflowCompletionReaction(event.runId, reportToken);
         await addThreadComment({
           repoFullName: repo,
           subjectId: reportTarget.subjectId,
@@ -156,21 +196,18 @@ export async function githubProvider(
       if (!issueId) {
         return respond(response, 202, "Accepted");
       }
-
-      context.trigger("issue:open", {
-        in: {
-          event: "issue:open",
-          user,
-          repo,
-          issueId,
-          content: readString(issue ?? {}, "body")
-        },
-        env: triggerEnv
-      });
       const subjectId = readInteger(issue ?? {}, "number");
       if (subjectId !== undefined) {
         reactionTarget = { subjectId, kind: "issue" };
       }
+
+      triggerWorkflow("issue:open", {
+        event: "issue:open",
+        user,
+        repo,
+        issueId,
+        content: readString(issue ?? {}, "body")
+      });
     } else if (eventName === "issue_comment" && action === "created") {
       const issueId = readId(issue);
       if (!issueId || !comment) {
@@ -180,63 +217,54 @@ export async function githubProvider(
       const content = readString(comment, "body") ?? "";
       const commentId = readInteger(comment, "id");
       if (readObject(issue ?? {}, "pull_request")) {
+        if (commentId !== undefined) {
+          reactionTarget = { subjectId: commentId, kind: "issue_comment" };
+        }
         const mention = parseCommentMention(content, github.botHandle);
 
         if (mention.hasMention) {
-          context.trigger("pr:at", {
-            in: {
-              event: "pr:at",
-              user,
-              repo,
-              prId: issueId,
-              content: mention.content
-            },
-            env: triggerEnv
+          triggerWorkflow("pr:at", {
+            event: "pr:at",
+            user,
+            repo,
+            prId: issueId,
+            content: mention.content
           });
         }
 
         // Issue comments on pull requests map directly to PR comment workflows.
-        context.trigger("pr:comment", {
-          in: {
-            event: "pr:comment",
-            user,
-            repo,
-            prId: issueId,
-            content
-          },
-          env: triggerEnv
+        triggerWorkflow("pr:comment", {
+          event: "pr:comment",
+          user,
+          repo,
+          prId: issueId,
+          content
         });
+      } else {
         if (commentId !== undefined) {
           reactionTarget = { subjectId: commentId, kind: "issue_comment" };
         }
-      } else {
         const mention = parseIssueMention(content, github.botHandle, github.requireMention);
         if (mention.command) {
           // Command workflows stay more specific than mention or generic comment handlers.
-          context.trigger(`issue:command:${mention.command}`, {
-            in: {
-              event: `issue:command:${mention.command}`,
-              user,
-              repo,
-              issueId,
-              content: mention.content,
-              command: mention.command
-            },
-            env: triggerEnv
+          triggerWorkflow(`issue:command:${mention.command}`, {
+            event: `issue:command:${mention.command}`,
+            user,
+            repo,
+            issueId,
+            content: mention.content,
+            command: mention.command
           });
         }
 
         if (mention.hasMention) {
-          context.trigger("issue:at", {
-            in: {
-              event: "issue:at",
-              user,
-              repo,
-              issueId,
-              content: mention.content,
-              command: mention.command
-            },
-            env: triggerEnv
+          triggerWorkflow("issue:at", {
+            event: "issue:at",
+            user,
+            repo,
+            issueId,
+            content: mention.content,
+            command: mention.command
           });
         }
 
@@ -246,20 +274,14 @@ export async function githubProvider(
         }
 
         // Generic issue-comment workflows can still win later in YAML order.
-        context.trigger("issue:comment", {
-          in: {
-            event: "issue:comment",
-            user,
-            repo,
-            issueId,
-            content: mention.content,
-            command: mention.command
-          },
-          env: triggerEnv
+        triggerWorkflow("issue:comment", {
+          event: "issue:comment",
+          user,
+          repo,
+          issueId,
+          content: mention.content,
+          command: mention.command
         });
-        if (commentId !== undefined) {
-          reactionTarget = { subjectId: commentId, kind: "issue_comment" };
-        }
       }
     } else if (eventName === "pull_request_review_comment" && action === "created") {
       const prId = readId(pullRequest);
@@ -268,38 +290,41 @@ export async function githubProvider(
       }
       const content = readString(comment, "body");
       const commentId = readInteger(comment, "id");
-      const mention = parseCommentMention(content ?? "", github.botHandle);
-
-      if (mention.hasMention) {
-        context.trigger("pr:at", {
-          in: {
-            event: "pr:at",
-            user,
-            repo,
-            prId,
-            content: mention.content
-          },
-          env: triggerEnv
-        });
-      }
-
-      context.trigger("pr:comment", {
-        in: {
-          event: "pr:comment",
-          user,
-          repo,
-          prId,
-          content
-        },
-        env: triggerEnv
-      });
       if (commentId !== undefined) {
         reactionTarget = { subjectId: commentId, kind: "pull_request_review_comment" };
       }
+      const mention = parseCommentMention(content ?? "", github.botHandle);
+
+      if (mention.hasMention) {
+        triggerWorkflow("pr:at", {
+          event: "pr:at",
+          user,
+          repo,
+          prId,
+          content: mention.content
+        });
+      }
+
+      triggerWorkflow("pr:comment", {
+        event: "pr:comment",
+        user,
+        repo,
+        prId,
+        content
+      });
     } else if (eventName === "pull_request_review") {
       const prId = readId(pullRequest);
       if (!prId || !review) {
         return respond(response, 202, "Accepted");
+      }
+      const reviewId = readInteger(review, "id");
+      const reviewNodeId = readString(review, "node_id");
+      if (reviewId !== undefined && reviewNodeId) {
+        reactionTarget = {
+          subjectId: reviewId,
+          kind: "pull_request_review",
+          nodeId: reviewNodeId
+        };
       }
 
       const reviewState = readString(review, "state");
@@ -314,20 +339,28 @@ export async function githubProvider(
 
       const prReview = mapReviewState(reviewState);
 
-      context.trigger("pr:review", {
-        in: {
-          event: "pr:review",
-          user,
-          repo,
-          prId,
-          prReview,
-          content: readString(review, "body")?.trim() || prReview || reviewState
-        },
-        env: triggerEnv
+      triggerWorkflow("pr:review", {
+        event: "pr:review",
+        user,
+        repo,
+        prId,
+        prReview,
+        content: readString(review, "body")?.trim() || prReview || reviewState
       });
     } else {
       requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "unsupported_event" });
       return respond(response, 202, "Accepted");
+    }
+
+    if (reactionTarget) {
+      context.on("completed", async (event) => {
+        await addWorkflowCompletionReaction(event.runId);
+      });
+      if (!reportTarget) {
+        context.on("error", async (event) => {
+          await addWorkflowCompletionReaction(event.runId);
+        });
+      }
     }
 
     // The shared engine handles workflow selection, execution, and tracking.
@@ -335,12 +368,11 @@ export async function githubProvider(
 
     if (result.status === "matched" && reactionTarget) {
       try {
-        await addCommentReaction({
+        await addGitHubReaction({
           repoFullName: repo,
-          subjectId: reactionTarget.subjectId,
           reaction: "eyes",
           token: installationToken,
-          kind: reactionTarget.kind
+          target: reactionTarget
         });
       } catch (error) {
         requestLog.warn({
