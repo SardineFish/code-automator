@@ -7,6 +7,11 @@ import path from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { App } from "../../src/app/app.js";
+import {
+  evaluateGitHubDelivery,
+  normalizeGitHubDeliveryPayload
+} from "../../src/app/providers/github-delivery-relevance.js";
+import { resolveGitHubProviderConfig } from "../../src/app/providers/github-config.js";
 import { githubProvider } from "../../src/app/providers/github-provider.js";
 import {
   issueCommentPayload,
@@ -17,6 +22,54 @@ import {
 import { createNoOpLogSink } from "../fixtures/log-sink.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
 import type { ActiveWorkflowRunRecord, WorkflowRunArtifacts } from "../../src/types/tracking.js";
+
+test("GitHub delivery evaluator keeps non-mentioned issue comments ignored", () => {
+  const config = createServiceConfig().gh;
+
+  if (!config) {
+    throw new Error("Missing test GitHub config.");
+  }
+
+  const evaluation = evaluateGitHubDelivery(
+    "issue_comment",
+    normalizeGitHubDeliveryPayload(issueCommentPayload("please plan this")),
+    resolveGitHubProviderConfig(config)
+  );
+
+  assert.deepEqual(evaluation, {
+    status: "ignored",
+    gate: {
+      actorLogin: "octocat",
+      installationId: 42,
+      repoFullName: "acme/demo"
+    },
+    reason: "not_mentioned"
+  });
+});
+
+test("GitHub delivery evaluator preserves command and generic mention routing", () => {
+  const config = createServiceConfig().gh;
+
+  if (!config) {
+    throw new Error("Missing test GitHub config.");
+  }
+
+  const evaluation = evaluateGitHubDelivery(
+    "issue_comment",
+    normalizeGitHubDeliveryPayload(issueCommentPayload("@github-agent-orchestrator /approve")),
+    resolveGitHubProviderConfig(config)
+  );
+
+  assert.equal(evaluation.status, "relevant");
+  assert.deepEqual(evaluation.delivery.triggers.map((trigger) => trigger.name), [
+    "issue:command:approve",
+    "issue:comment"
+  ]);
+  assert.deepEqual(evaluation.delivery.reactionTarget, {
+    subjectId: 99,
+    kind: "issue_comment"
+  });
+});
 
 function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
   const artifacts: WorkflowRunArtifacts = {

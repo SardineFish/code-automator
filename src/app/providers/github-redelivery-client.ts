@@ -1,12 +1,22 @@
+import {
+  type GitHubDeliveryPayload,
+  normalizeGitHubDeliveryPayload
+} from "./github-delivery-relevance.js";
 import { asObject, readInteger, readString } from "./github-utils.js";
 
 export interface GitHubAppWebhookDelivery {
-  id: number;
-  guid: string;
+  action?: string;
   deliveredAt: string;
+  eventName: string;
+  guid: string;
+  id: number;
   redelivery: boolean;
   status: string;
   statusCode?: number;
+}
+
+export interface GitHubAppWebhookDeliveryDetail extends GitHubAppWebhookDelivery {
+  payload: GitHubDeliveryPayload;
 }
 
 export interface GitHubAppWebhookDeliveryPage {
@@ -15,11 +25,30 @@ export interface GitHubAppWebhookDeliveryPage {
 }
 
 export interface GitHubAppWebhookDeliveryClient {
+  getDelivery(jwt: string, deliveryId: number): Promise<GitHubAppWebhookDeliveryDetail>;
   listDeliveries(jwt: string, pageUrl?: string): Promise<GitHubAppWebhookDeliveryPage>;
   redeliverDelivery(jwt: string, deliveryId: number): Promise<void>;
 }
 
 export const fetchGitHubAppWebhookDeliveryClient: GitHubAppWebhookDeliveryClient = {
+  async getDelivery(jwt, deliveryId) {
+    const response = await fetch(`https://api.github.com/app/hook/deliveries/${deliveryId}`, {
+      headers: createGitHubAppHeaders(jwt)
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`GitHub webhook delivery detail request failed: ${response.status} ${body}`);
+    }
+
+    const payload = normalizeDeliveryDetail((await response.json()) as unknown);
+
+    if (!payload) {
+      throw new Error("GitHub webhook delivery detail response was missing required fields.");
+    }
+
+    return payload;
+  },
   async listDeliveries(jwt, pageUrl) {
     const response = await fetch(pageUrl ?? "https://api.github.com/app/hook/deliveries?per_page=100", {
       headers: createGitHubAppHeaders(jwt)
@@ -66,9 +95,32 @@ function normalizeDelivery(value: unknown): GitHubAppWebhookDelivery | null {
     return null;
   }
 
-  const id = readInteger(delivery, "id");
-  const guid = readString(delivery, "guid");
-  const deliveredAt = readString(delivery, "delivered_at");
+  const summary = normalizeDeliverySummary(delivery);
+  return summary ? { ...summary, eventName: readString(delivery, "event") ?? "" } : null;
+}
+
+function normalizeDeliveryDetail(value: unknown): GitHubAppWebhookDeliveryDetail | null {
+  const delivery = asObject(value);
+  const summary = delivery ? normalizeDeliverySummary(delivery) : null;
+  const request = delivery ? asObject(delivery.request) : null;
+  const payload = request ? asObject(request.payload) : null;
+  const eventName = delivery ? readString(delivery, "event") : undefined;
+
+  if (!summary || !payload || !eventName) {
+    return null;
+  }
+
+  return {
+    ...summary,
+    eventName,
+    payload: normalizeGitHubDeliveryPayload(payload)
+  };
+}
+
+function normalizeDeliverySummary(value: Record<string, unknown>) {
+  const id = readInteger(value, "id");
+  const guid = readString(value, "guid");
+  const deliveredAt = readString(value, "delivered_at");
 
   if (id === undefined || !guid || !deliveredAt || Number.isNaN(Date.parse(deliveredAt))) {
     return null;
@@ -78,9 +130,10 @@ function normalizeDelivery(value: unknown): GitHubAppWebhookDelivery | null {
     id,
     guid,
     deliveredAt,
-    redelivery: typeof delivery.redelivery === "boolean" ? delivery.redelivery : false,
-    status: readString(delivery, "status") ?? "",
-    statusCode: readInteger(delivery, "status_code")
+    action: readString(value, "action"),
+    redelivery: typeof value.redelivery === "boolean" ? value.redelivery : false,
+    status: readString(value, "status") ?? "",
+    statusCode: readInteger(value, "status_code")
   };
 }
 

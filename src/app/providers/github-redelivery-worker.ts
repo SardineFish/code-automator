@@ -3,18 +3,41 @@ import path from "node:path";
 
 import type { TrackingConfig } from "../../types/config.js";
 import type { LogSink } from "../../types/logging.js";
-import { fetchGitHubAppWebhookDeliveryClient, type GitHubAppWebhookDelivery, type GitHubAppWebhookDeliveryClient } from "./github-redelivery-client.js";
+import { evaluateGitHubDelivery, type GitHubReactionTarget } from "./github-delivery-relevance.js";
+import type {
+  GitHubAppWebhookDelivery,
+  GitHubAppWebhookDeliveryClient
+} from "./github-redelivery-client.js";
+import { fetchGitHubAppWebhookDeliveryClient } from "./github-redelivery-client.js";
 import type { ResolvedGitHubProviderConfig } from "./github-config.js";
-import { getGitHubAppJwtProvider, requireEnv } from "./github-utils.js";
+import {
+  getGitHubAppJwtProvider,
+  getInstallationTokenProvider,
+  listCommentReactions,
+  readGitHubThreadState,
+  requireEnv,
+  type GitHubReaction
+} from "./github-utils.js";
 
 const DELIVERY_LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
 const DELIVERY_SETTLE_DELAY_MS = 60 * 1000;
 const CHECKPOINT_OVERLAP_MS = 60 * 1000;
 
+type GitHubSettledGuidStatus =
+  | "retried"
+  | "skipped_already_handled"
+  | "skipped_by_provider_filter";
+
 interface GitHubRedeliveryState {
   version: 1;
   checkpoint?: string;
-  retriedGuids: Record<string, string>;
+  settledGuids: Record<string, GitHubSettledGuidRecord>;
+}
+
+interface GitHubSettledGuidRecord {
+  reason?: string;
+  settledAt: string;
+  status: GitHubSettledGuidStatus;
 }
 
 export interface GitHubRedeliveryWorker {
@@ -23,12 +46,12 @@ export interface GitHubRedeliveryWorker {
 }
 
 export interface GitHubRedeliveryWorkerOptions {
-  github: ResolvedGitHubProviderConfig;
-  tracking: TrackingConfig;
-  env: NodeJS.ProcessEnv;
-  logSink: LogSink;
   client?: GitHubAppWebhookDeliveryClient;
+  env: NodeJS.ProcessEnv;
+  github: ResolvedGitHubProviderConfig;
+  logSink: LogSink;
   now?: () => Date;
+  tracking: TrackingConfig;
 }
 
 export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOptions): GitHubRedeliveryWorker {
@@ -40,12 +63,13 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
       async runOnce() {}
     };
   }
-  const redeliveryConfig = redelivery;
 
+  const redeliveryConfig = redelivery;
   const now = options.now ?? (() => new Date());
   const privateKeyPath = requireEnv(options.env, "GITHUB_APP_PRIVATE_KEY_PATH");
   const client = options.client ?? fetchGitHubAppWebhookDeliveryClient;
   const jwtProvider = getGitHubAppJwtProvider(privateKeyPath);
+  const installationTokenProvider = getInstallationTokenProvider(privateKeyPath);
   const stateFilePath = getGitHubRedeliveryStateFilePath(options.tracking.stateFile);
   const log = options.logSink.child({ source: "gh-redelivery" });
   let started = false;
@@ -88,11 +112,14 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
     const { deliveries, pageCount } = await listDeliveriesSince(client, jwt, scanStartMs);
     const candidates = selectGitHubRedeliveryCandidates(
       deliveries,
-      state.retriedGuids,
+      state.settledGuids,
       scanStartedAt,
       redeliveryConfig.maxPerRun
     );
-    let attempted = 0;
+    const installationTokens = new Map<number, Promise<string>>();
+    let retried = 0;
+    let skippedAlreadyHandled = 0;
+    let skippedByProviderFilter = 0;
 
     log.info({
       message: "scanned GitHub App webhook deliveries",
@@ -104,23 +131,87 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
 
     for (const candidate of candidates) {
       try {
+        const detail = await client.getDelivery(jwt, candidate.id);
+        const evaluation = evaluateGitHubDelivery(detail.eventName, detail.payload, options.github);
+
+        if (evaluation.status === "ignored") {
+          skippedByProviderFilter += 1;
+          settleGuid(state, candidate.guid, scanStartedAtIso, "skipped_by_provider_filter", evaluation.reason);
+          await saveState(stateFilePath, state);
+          log.info({
+            message: "skipped GitHub App webhook delivery by provider filter",
+            deliveryId: candidate.id,
+            guid: candidate.guid,
+            reason: evaluation.reason
+          });
+          continue;
+        }
+
+        const token = await getInstallationToken(evaluation.delivery.gate.installationId);
+        const threadState = evaluation.delivery.threadTarget
+          ? await readGitHubThreadState({
+              repoFullName: evaluation.delivery.gate.repoFullName,
+              subjectId: evaluation.delivery.threadTarget.number,
+              token,
+              kind: evaluation.delivery.threadTarget.kind
+            })
+          : undefined;
+
+        if (threadState === "closed") {
+          const reason =
+            evaluation.delivery.threadTarget?.kind === "pull_request"
+              ? "pull_request_closed"
+              : "issue_closed";
+          skippedByProviderFilter += 1;
+          settleGuid(state, candidate.guid, scanStartedAtIso, "skipped_by_provider_filter", reason);
+          await saveState(stateFilePath, state);
+          log.info({
+            message: "skipped GitHub App webhook delivery by provider filter",
+            deliveryId: candidate.id,
+            guid: candidate.guid,
+            reason
+          });
+          continue;
+        }
+
+        if (
+          await isAlreadyHandledDelivery(
+            evaluation.delivery.gate.repoFullName,
+            evaluation.delivery.reactionTarget,
+            token,
+            options.github.botHandle
+          )
+        ) {
+          skippedAlreadyHandled += 1;
+          settleGuid(state, candidate.guid, scanStartedAtIso, "skipped_already_handled", "bot_eyes_reaction");
+          await saveState(stateFilePath, state);
+          log.info({
+            message: "skipped GitHub App webhook delivery because already handled",
+            deliveryId: candidate.id,
+            guid: candidate.guid,
+            reason: "bot_eyes_reaction"
+          });
+          continue;
+        }
+
         await client.redeliverDelivery(jwt, candidate.id);
-        state.retriedGuids[candidate.guid] = scanStartedAtIso;
-        attempted += 1;
+        retried += 1;
+        settleGuid(state, candidate.guid, scanStartedAtIso, "retried", "relevant_unhandled_delivery");
         await saveState(stateFilePath, state);
         log.info({
-          message: "requested GitHub App webhook redelivery",
+          message: "retried GitHub App webhook delivery",
           deliveryId: candidate.id,
           guid: candidate.guid,
+          reason: "relevant_unhandled_delivery",
           status: candidate.status,
           redelivery: candidate.redelivery
         });
       } catch (error) {
         log.warn({
-          message: "GitHub App webhook redelivery request failed",
+          message: "GitHub App webhook redelivery candidate handling failed",
           deliveryId: candidate.id,
           guid: candidate.guid,
-          errorMessage: error instanceof Error ? error.message : "Unknown redelivery error."
+          errorMessage: error instanceof Error ? error.message : "Unknown redelivery candidate error."
         });
       }
     }
@@ -131,14 +222,28 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
       message: "completed GitHub App webhook delivery scan",
       deliveryCount: deliveries.length,
       candidateCount: candidates.length,
-      attempted
+      retried,
+      skippedAlreadyHandled,
+      skippedByProviderFilter
     });
+
+    function getInstallationToken(installationId: number): Promise<string> {
+      const existing = installationTokens.get(installationId);
+
+      if (existing) {
+        return existing;
+      }
+
+      const created = installationTokenProvider.createInstallationToken(options.github.clientId, installationId);
+      installationTokens.set(installationId, created);
+      return created;
+    }
   }
 }
 
 export function selectGitHubRedeliveryCandidates(
   deliveries: GitHubAppWebhookDelivery[],
-  retriedGuids: Record<string, string>,
+  settledGuids: Record<string, GitHubSettledGuidRecord>,
   now: Date,
   maxPerRun: number
 ): GitHubAppWebhookDelivery[] {
@@ -158,7 +263,7 @@ export function selectGitHubRedeliveryCandidates(
   const candidates: GitHubAppWebhookDelivery[] = [];
 
   for (const [guid, group] of groups) {
-    if (retriedGuids[guid]) {
+    if (settledGuids[guid]) {
       continue;
     }
 
@@ -184,6 +289,41 @@ export function selectGitHubRedeliveryCandidates(
 export function getGitHubRedeliveryStateFilePath(stateFile: string): string {
   const parsed = path.parse(stateFile);
   return path.join(parsed.dir, `${parsed.name}.runs`, "github-redelivery-state.json");
+}
+
+async function isAlreadyHandledDelivery(
+  repoFullName: string,
+  reactionTarget: GitHubReactionTarget | undefined,
+  token: string,
+  botHandle: string
+): Promise<boolean> {
+  if (!reactionTarget || reactionTarget.kind === "issue") {
+    return false;
+  }
+
+  const reactions = await listCommentReactions({
+    repoFullName,
+    subjectId: reactionTarget.subjectId,
+    token,
+    kind: reactionTarget.kind
+  });
+
+  return hasBotEyesReaction(reactions, botHandle);
+}
+
+function hasBotEyesReaction(reactions: GitHubReaction[], botHandle: string): boolean {
+  return reactions.some((reaction) => reaction.content === "eyes" && isBotReactionUser(reaction.userLogin, botHandle));
+}
+
+function isBotReactionUser(login: string | undefined, botHandle: string): boolean {
+  if (!login) {
+    return false;
+  }
+
+  const normalizedLogin = login.toLowerCase();
+  const normalizedHandle = botHandle.toLowerCase();
+
+  return normalizedLogin === normalizedHandle || normalizedLogin === `${normalizedHandle}[bot]`;
 }
 
 async function listDeliveriesSince(
@@ -262,25 +402,72 @@ function normalizeState(value: unknown): GitHubRedeliveryState {
   const parsed = value as {
     checkpoint?: unknown;
     retriedGuids?: unknown;
+    settledGuids?: unknown;
   };
+  const settledGuids = normalizeSettledGuids(parsed.settledGuids);
+
+  if (Object.keys(settledGuids).length === 0) {
+    for (const [guid, settledAt] of Object.entries(normalizeLegacyRetriedGuids(parsed.retriedGuids))) {
+      settledGuids[guid] = {
+        settledAt,
+        status: "retried"
+      };
+    }
+  }
 
   return {
     version: 1,
     checkpoint: typeof parsed.checkpoint === "string" && parsed.checkpoint.trim() !== "" ? parsed.checkpoint : undefined,
-    retriedGuids: normalizeRetriedGuids(parsed.retriedGuids)
+    settledGuids
   };
 }
 
-function normalizeRetriedGuids(value: unknown): Record<string, string> {
+function normalizeSettledGuids(value: unknown): Record<string, GitHubSettledGuidRecord> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {};
+  }
+
+  const result: Record<string, GitHubSettledGuidRecord> = {};
+
+  for (const [guid, entry] of Object.entries(value)) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      continue;
+    }
+
+    const settledGuid = entry as {
+      reason?: unknown;
+      settledAt?: unknown;
+      status?: unknown;
+    };
+
+    if (
+      typeof settledGuid.settledAt !== "string" ||
+      settledGuid.settledAt.trim() === "" ||
+      !isSettledGuidStatus(settledGuid.status)
+    ) {
+      continue;
+    }
+
+    result[guid] = {
+      settledAt: settledGuid.settledAt,
+      status: settledGuid.status,
+      reason: typeof settledGuid.reason === "string" && settledGuid.reason.trim() !== "" ? settledGuid.reason : undefined
+    };
+  }
+
+  return result;
+}
+
+function normalizeLegacyRetriedGuids(value: unknown): Record<string, string> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return {};
   }
 
   const result: Record<string, string> = {};
 
-  for (const [guid, attemptedAt] of Object.entries(value)) {
-    if (typeof attemptedAt === "string" && attemptedAt.trim() !== "") {
-      result[guid] = attemptedAt;
+  for (const [guid, settledAt] of Object.entries(value)) {
+    if (typeof settledAt === "string" && settledAt.trim() !== "") {
+      result[guid] = settledAt;
     }
   }
 
@@ -289,25 +476,25 @@ function normalizeRetriedGuids(value: unknown): Record<string, string> {
 
 function pruneGitHubRedeliveryState(state: GitHubRedeliveryState, now: Date): GitHubRedeliveryState {
   const cutoffMs = now.getTime() - DELIVERY_LOOKBACK_MS;
-  const retriedGuids: Record<string, string> = {};
+  const settledGuids: Record<string, GitHubSettledGuidRecord> = {};
 
-  for (const [guid, attemptedAt] of Object.entries(state.retriedGuids)) {
-    if (!Number.isNaN(Date.parse(attemptedAt)) && Date.parse(attemptedAt) >= cutoffMs) {
-      retriedGuids[guid] = attemptedAt;
+  for (const [guid, entry] of Object.entries(state.settledGuids)) {
+    if (!Number.isNaN(Date.parse(entry.settledAt)) && Date.parse(entry.settledAt) >= cutoffMs) {
+      settledGuids[guid] = entry;
     }
   }
 
   return {
     version: 1,
     checkpoint: state.checkpoint,
-    retriedGuids
+    settledGuids
   };
 }
 
 function createEmptyState(): GitHubRedeliveryState {
   return {
     version: 1,
-    retriedGuids: {}
+    settledGuids: {}
   };
 }
 
@@ -331,9 +518,27 @@ function isErrnoException(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === code;
 }
 
+function isSettledGuidStatus(value: unknown): value is GitHubSettledGuidStatus {
+  return value === "retried" || value === "skipped_already_handled" || value === "skipped_by_provider_filter";
+}
+
 function logWorkerError(log: LogSink, error: unknown): void {
   log.error({
     message: "GitHub App webhook redelivery scan failed",
     errorMessage: error instanceof Error ? error.message : "Unknown redelivery worker error."
   });
+}
+
+function settleGuid(
+  state: GitHubRedeliveryState,
+  guid: string,
+  settledAt: string,
+  status: GitHubSettledGuidStatus,
+  reason?: string
+): void {
+  state.settledGuids[guid] = {
+    settledAt,
+    status,
+    reason
+  };
 }

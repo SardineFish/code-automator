@@ -3,19 +3,29 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 
 import { resolveGitHubProviderConfig } from "../../src/app/providers/github-config.js";
-import type { GitHubAppWebhookDelivery } from "../../src/app/providers/github-redelivery-client.js";
-import { createGitHubRedeliveryWorker, selectGitHubRedeliveryCandidates } from "../../src/app/providers/github-redelivery-worker.js";
+import type {
+  GitHubAppWebhookDelivery,
+  GitHubAppWebhookDeliveryDetail
+} from "../../src/app/providers/github-redelivery-client.js";
+import {
+  createGitHubRedeliveryWorker,
+  selectGitHubRedeliveryCandidates
+} from "../../src/app/providers/github-redelivery-worker.js";
 import { createNoOpLogSink } from "../fixtures/log-sink.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
 
-test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful or recent deliveries", () => {
+const FIXED_NOW = new Date("2026-04-02T12:00:00.000Z");
+
+test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, recent, and settled deliveries", () => {
   const deliveries: GitHubAppWebhookDelivery[] = [
     {
       id: 10,
       guid: "guid-retry",
+      eventName: "issue_comment",
+      action: "created",
       deliveredAt: "2026-04-02T11:40:00.000Z",
       redelivery: false,
       status: "FAILED",
@@ -24,6 +34,8 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful or r
     {
       id: 11,
       guid: "guid-retry",
+      eventName: "issue_comment",
+      action: "created",
       deliveredAt: "2026-04-02T11:45:00.000Z",
       redelivery: true,
       status: "FAILED",
@@ -32,6 +44,8 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful or r
     {
       id: 20,
       guid: "guid-ok",
+      eventName: "issue_comment",
+      action: "created",
       deliveredAt: "2026-04-02T11:30:00.000Z",
       redelivery: false,
       status: "FAILED",
@@ -40,6 +54,8 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful or r
     {
       id: 21,
       guid: "guid-ok",
+      eventName: "issue_comment",
+      action: "created",
       deliveredAt: "2026-04-02T11:35:00.000Z",
       redelivery: true,
       status: "OK",
@@ -48,6 +64,8 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful or r
     {
       id: 30,
       guid: "guid-recent",
+      eventName: "issue_comment",
+      action: "created",
       deliveredAt: "2026-04-02T11:59:45.000Z",
       redelivery: false,
       status: "FAILED",
@@ -57,31 +75,203 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful or r
 
   const candidates = selectGitHubRedeliveryCandidates(
     deliveries,
-    { "guid-already-tried": "2026-04-02T11:50:00.000Z" },
-    new Date("2026-04-02T12:00:00.000Z"),
+    {
+      "guid-already-settled": {
+        settledAt: "2026-04-02T11:50:00.000Z",
+        status: "retried"
+      }
+    },
+    FIXED_NOW,
     2
   );
 
   assert.deepEqual(candidates.map((delivery) => delivery.id), [11]);
 });
 
-test("createGitHubRedeliveryWorker persists retried guids across restarts", async (t) => {
+test("createGitHubRedeliveryWorker skips deliveries rejected by the provider filter", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createIssueCommentDetail("@github-agent-orchestrator /approve", { senderLogin: "intruder" })
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, []);
+});
+
+test("createGitHubRedeliveryWorker skips ignored issue comments without a mention", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createIssueCommentDetail("please plan this")
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, []);
+});
+
+test("createGitHubRedeliveryWorker skips already closed issues", async (t) => {
+  const issueHarness = await createWorkerHarness(t, {
+    detail: createIssueOpenedDetail(),
+    issueState: "closed"
+  });
+
+  await createGitHubRedeliveryWorker(issueHarness.options).runOnce();
+
+  assert.deepEqual(issueHarness.redeliveryCalls, []);
+});
+
+test("createGitHubRedeliveryWorker skips already closed pull requests", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createReviewCommentDetail("needs work"),
+    pullRequestState: "closed"
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, []);
+});
+
+test("createGitHubRedeliveryWorker skips issue comments that already have the bot eyes reaction", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createIssueCommentDetail("@github-agent-orchestrator /approve"),
+    reactions: [{ content: "eyes", user: { login: "github-agent-orchestrator[bot]", type: "Bot" } }]
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, []);
+});
+
+test("createGitHubRedeliveryWorker skips PR review comments that already have the bot eyes reaction", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createReviewCommentDetail("needs work"),
+    reactions: [{ content: "eyes", user: { login: "github-agent-orchestrator[bot]", type: "Bot" } }]
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, []);
+});
+
+test("createGitHubRedeliveryWorker retries relevant unhandled failures even when another user already reacted", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createIssueCommentDetail("@github-agent-orchestrator /approve"),
+    reactions: [{ content: "eyes", user: { login: "octocat", type: "User" } }]
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, [11]);
+});
+
+test("createGitHubRedeliveryWorker persists settled GUIDs across restarts", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createIssueCommentDetail("@github-agent-orchestrator /approve")
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, [11]);
+});
+
+function createIssueOpenedDetail(): GitHubAppWebhookDeliveryDetail {
+  return {
+    ...createDeliverySummary(11, "guid-retry"),
+    eventName: "issues",
+    action: "opened",
+    payload: {
+      action: "opened",
+      repository: { fullName: "acme/demo" },
+      sender: { login: "octocat" },
+      installation: { id: 42 },
+      issue: {
+        body: "Need a plan",
+        id: "7",
+        isPullRequest: false,
+        number: 7
+      }
+    }
+  };
+}
+
+function createIssueCommentDetail(
+  body: string,
+  options?: { pullRequest?: boolean; senderLogin?: string }
+): GitHubAppWebhookDeliveryDetail {
+  return {
+    ...createDeliverySummary(11, "guid-retry"),
+    eventName: "issue_comment",
+    action: "created",
+    payload: {
+      action: "created",
+      repository: { fullName: "acme/demo" },
+      sender: { login: options?.senderLogin ?? "octocat" },
+      installation: { id: 42 },
+      issue: {
+        body: "Need a plan",
+        id: "7",
+        isPullRequest: options?.pullRequest ?? false,
+        number: 7
+      },
+      comment: {
+        body,
+        id: 99
+      }
+    }
+  };
+}
+
+function createReviewCommentDetail(body: string): GitHubAppWebhookDeliveryDetail {
+  return {
+    ...createDeliverySummary(11, "guid-retry"),
+    eventName: "pull_request_review_comment",
+    action: "created",
+    payload: {
+      action: "created",
+      repository: { fullName: "acme/demo" },
+      sender: { login: "octocat" },
+      installation: { id: 42 },
+      pullRequest: {
+        id: "8",
+        number: 8
+      },
+      comment: {
+        body,
+        id: 101
+      }
+    }
+  };
+}
+
+function createDeliverySummary(id: number, guid: string): GitHubAppWebhookDelivery {
+  return {
+    id,
+    guid,
+    eventName: "issue_comment",
+    action: "created",
+    deliveredAt: "2026-04-02T11:45:00.000Z",
+    redelivery: true,
+    status: "FAILED",
+    statusCode: 500
+  };
+}
+
+async function createWorkerHarness(
+  t: TestContext,
+  options: {
+    detail: GitHubAppWebhookDeliveryDetail;
+    issueState?: string;
+    pullRequestState?: string;
+    reactions?: unknown[];
+  }
+) {
   const dir = await mkdtemp(path.join(tmpdir(), "gao-gh-redelivery-"));
   const env = await createGitHubAppEnv(dir);
   const config = createServiceConfig();
   const trackingDir = path.join(dir, "tracking");
   const githubConfig = config.gh;
-  const deliveries: GitHubAppWebhookDelivery[] = [
-    {
-      id: 11,
-      guid: "guid-retry",
-      deliveredAt: "2026-04-02T11:45:00.000Z",
-      redelivery: true,
-      status: "FAILED",
-      statusCode: 500
-    }
-  ];
   const redeliveryCalls: number[] = [];
+  const originalFetch = global.fetch;
 
   config.tracking = {
     stateFile: path.join(trackingDir, "state.json"),
@@ -98,7 +288,47 @@ test("createGitHubRedeliveryWorker persists retried guids across restarts", asyn
     }
   };
 
+  global.fetch = async (input) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+
+    if (url.startsWith("https://api.github.com/app/installations/")) {
+      return new Response(JSON.stringify({ token: "installation-token" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    if (/\/issues\/comments\/\d+\/reactions\?per_page=100$/.test(url) || /\/pulls\/comments\/\d+\/reactions\?per_page=100$/.test(url)) {
+      return new Response(JSON.stringify(options.reactions ?? []), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    if (/\/issues\/\d+$/.test(url)) {
+      return new Response(JSON.stringify({ state: options.issueState ?? "open" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    if (/\/pulls\/\d+$/.test(url)) {
+      return new Response(JSON.stringify({ state: options.pullRequestState ?? "open" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
   t.after(async () => {
+    global.fetch = originalFetch;
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -106,31 +336,33 @@ test("createGitHubRedeliveryWorker persists retried guids across restarts", asyn
   const client = {
     async listDeliveries() {
       return {
-        deliveries,
+        deliveries: [{ ...options.detail }],
         nextPageUrl: undefined
       };
+    },
+    async getDelivery() {
+      return options.detail;
     },
     async redeliverDelivery(_jwt: string, deliveryId: number) {
       redeliveryCalls.push(deliveryId);
     }
   };
-  const options = {
-    github,
-    tracking: config.tracking,
-    env: {
-      ...process.env,
-      GITHUB_APP_PRIVATE_KEY_PATH: env.pemPath
+
+  return {
+    options: {
+      github,
+      tracking: config.tracking,
+      env: {
+        ...process.env,
+        GITHUB_APP_PRIVATE_KEY_PATH: env.pemPath
+      },
+      logSink: createNoOpLogSink(),
+      client,
+      now: () => FIXED_NOW
     },
-    logSink: createNoOpLogSink(),
-    client,
-    now: () => new Date("2026-04-02T12:00:00.000Z")
+    redeliveryCalls
   };
-
-  await createGitHubRedeliveryWorker(options).runOnce();
-  await createGitHubRedeliveryWorker(options).runOnce();
-
-  assert.deepEqual(redeliveryCalls, [11]);
-});
+}
 
 async function createGitHubAppEnv(dir: string) {
   const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
