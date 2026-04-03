@@ -22,6 +22,11 @@ import {
 import { createServiceConfig } from "../fixtures/service-config.js";
 import type { AppConfig } from "../../src/types/config.js";
 import type { LogSink } from "../../src/types/logging.js";
+import type {
+  AppContextTerminalListeners,
+  WorkflowCompletedEventPayload,
+  WorkflowErrorEventPayload
+} from "../../src/types/runtime.js";
 import type { ActiveWorkflowRunRecord, WorkflowRunArtifacts } from "../../src/types/tracking.js";
 
 function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
@@ -378,6 +383,61 @@ test("GitHub provider reports PR-path runtime failures on the PR thread", async 
   assert.match(commentCalls[0] ?? "", /\bat\b/);
 });
 
+test("GitHub provider reports queued terminal failures on the same thread", async (t) => {
+  const { commentCalls, emitTrackedError, installationTokenCalls, started, url } = await startGitHubApp(t);
+  const response = await signedRequest(
+    url,
+    issueCommentPayload("@github-agent-orchestrator /approve"),
+    "issue_comment"
+  );
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commentCalls, []);
+  assert.equal(installationTokenCalls.length, 1);
+
+  await emitTrackedError("run-1", {
+    runId: "run-1",
+    workflowName: "issue-implement",
+    matchedTrigger: "issue:command:approve",
+    executorName: "claude",
+    completedAt: "2026-04-02T00:00:10.000Z",
+    status: "failed",
+    error: new Error("Workflow exited with code 17.")
+  });
+
+  assert.equal(installationTokenCalls.length, 2);
+  assert.equal(commentCalls.length, 1);
+  assert.match(commentCalls[0] ?? "", /^POST https:\/\/api\.github\.com\/repos\/acme\/demo\/issues\/7\/comments /);
+  assert.match(commentCalls[0] ?? "", /queued this workflow/);
+  assert.match(commentCalls[0] ?? "", /Workflow exited with code 17\./);
+});
+
+test("GitHub provider does not report terminal success for queued workflows", async (t) => {
+  const { commentCalls, emitTrackedCompleted, installationTokenCalls, started, url } =
+    await startGitHubApp(t);
+  const response = await signedRequest(
+    url,
+    issueCommentPayload("@github-agent-orchestrator /approve"),
+    "issue_comment"
+  );
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+
+  await emitTrackedCompleted("run-1", {
+    runId: "run-1",
+    workflowName: "issue-implement",
+    matchedTrigger: "issue:command:approve",
+    executorName: "claude",
+    completedAt: "2026-04-02T00:00:10.000Z",
+    status: "succeeded"
+  });
+
+  assert.deepEqual(commentCalls, []);
+  assert.equal(installationTokenCalls.length, 1);
+});
+
 async function startGitHubApp(
   t: TestContext,
   options?: {
@@ -403,8 +463,10 @@ async function startGitHubApp(
   const commands: string[] = [];
   const commentCalls: string[] = [];
   const envs: NodeJS.ProcessEnv[] = [];
+  const installationTokenCalls: string[] = [];
   const reactionCalls: string[] = [];
   const started: string[] = [];
+  const terminalListeners = new Map<string, AppContextTerminalListeners>();
   let runCount = 0;
   const logSink = options?.logSink ?? createNoOpLogSink();
   const originalFetch = global.fetch;
@@ -418,6 +480,7 @@ async function startGitHubApp(
           : input.url;
 
     if (url.startsWith("https://api.github.com/app/installations/")) {
+      installationTokenCalls.push(url);
       return new Response(JSON.stringify({ token: "installation-token" }), {
         status: 200,
         headers: { "content-type": "application/json" }
@@ -478,6 +541,15 @@ async function startGitHubApp(
         }
         return createQueuedRunRecord(`run-${runCount + 1}`);
       },
+      subscribeTerminalEvents(runId, listeners) {
+        terminalListeners.set(runId, {
+          completed: [...listeners.completed],
+          error: [...listeners.error]
+        });
+        return () => {
+          terminalListeners.delete(runId);
+        };
+      },
       async updateQueuedRun() {
         return {} as never;
       },
@@ -521,7 +593,14 @@ async function startGitHubApp(
     server: app.server,
     commands,
     commentCalls,
+    emitTrackedCompleted(runId: string, payload: WorkflowCompletedEventPayload) {
+      return emitTrackedCompleted(terminalListeners, runId, payload);
+    },
+    emitTrackedError(runId: string, payload: WorkflowErrorEventPayload) {
+      return emitTrackedError(terminalListeners, runId, payload);
+    },
     envs,
+    installationTokenCalls,
     reactionCalls,
     started,
     url: `http://127.0.0.1:${address.port}${github.url}`
@@ -552,6 +631,36 @@ async function signedRequest(url: string, payload: unknown, eventName: string) {
     },
     body
   });
+}
+
+async function emitTrackedCompleted(
+  terminalListeners: Map<string, AppContextTerminalListeners>,
+  runId: string,
+  payload: WorkflowCompletedEventPayload
+): Promise<void> {
+  const listeners = terminalListeners.get(runId);
+  if (!listeners) {
+    throw new Error(`Missing terminal listeners for ${runId}.`);
+  }
+
+  for (const listener of listeners.completed) {
+    await listener(payload);
+  }
+}
+
+async function emitTrackedError(
+  terminalListeners: Map<string, AppContextTerminalListeners>,
+  runId: string,
+  payload: WorkflowErrorEventPayload
+): Promise<void> {
+  const listeners = terminalListeners.get(runId);
+  if (!listeners) {
+    throw new Error(`Missing terminal listeners for ${runId}.`);
+  }
+
+  for (const listener of listeners.error) {
+    await listener(payload);
+  }
 }
 
 async function waitForCondition(check: () => boolean, timeoutMs = 1000): Promise<void> {

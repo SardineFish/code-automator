@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { TrackingConfig } from "../../types/config.js";
 import type { LogSink } from "../../types/logging.js";
+import type { AppContextTerminalListeners } from "../../types/runtime.js";
 import type {
   ActiveWorkflowRunRecord,
   CompletedWorkflowRunRecord,
@@ -11,6 +12,7 @@ import type { WorkflowTrackerRepo } from "../../repo/tracking/file-workflow-trac
 import { logCompletedRun } from "./log-completed-run.js";
 import { cleanupWorkspace, getCompletedStatus, readPid, requireActiveRun } from "./tracker-helpers.js";
 import type { WorkflowTracker } from "./workflow-tracker.js";
+import { buildWorkflowTerminalEvent, emitWorkflowTerminalEvent } from "./workflow-terminal-events.js";
 
 const QUEUED_LOST_GRACE_MS = 30000;
 
@@ -20,6 +22,7 @@ export function createFileWorkflowTracker(
   logSink: LogSink
 ): WorkflowTracker {
   let state: WorkflowTrackerState = { version: 1, activeRuns: {} };
+  const terminalListeners = new Map<string, AppContextTerminalListeners>();
   let queue = Promise.resolve();
 
   return {
@@ -46,6 +49,33 @@ export function createFileWorkflowTracker(
         await repo.saveState(config, state);
         return record;
       });
+    },
+    subscribeTerminalEvents(runId, listeners) {
+      const nextListeners = cloneTerminalListeners(listeners);
+      if (!hasTerminalListeners(nextListeners)) {
+        return () => undefined;
+      }
+
+      const currentListeners = terminalListeners.get(runId);
+      terminalListeners.set(
+        runId,
+        currentListeners ? mergeTerminalListeners(currentListeners, nextListeners) : nextListeners
+      );
+
+      return () => {
+        const current = terminalListeners.get(runId);
+        if (!current) {
+          return;
+        }
+
+        const remaining = removeTerminalListeners(current, nextListeners);
+        if (hasTerminalListeners(remaining)) {
+          terminalListeners.set(runId, remaining);
+          return;
+        }
+
+        terminalListeners.delete(runId);
+      };
     },
     async updateQueuedRun(runId, details) {
       return withLock(async () => {
@@ -85,6 +115,7 @@ export function createFileWorkflowTracker(
         const record = state.activeRuns[runId];
 
         if (!record) {
+          terminalListeners.delete(runId);
           return null;
         }
 
@@ -102,6 +133,12 @@ export function createFileWorkflowTracker(
         await repo.saveState(config, state);
         await repo.appendLog(config, { ...completedRecord });
         await logCompletedRun(logSink, completedRecord);
+        const listeners = terminalListeners.get(runId);
+        terminalListeners.delete(runId);
+        const terminalEvent = buildWorkflowTerminalEvent(completedRecord);
+        if (listeners && terminalEvent) {
+          emitWorkflowTerminalEvent(logSink, runId, listeners, terminalEvent);
+        }
         return completedRecord;
       });
     },
@@ -169,4 +206,51 @@ export function createFileWorkflowTracker(
 
 function isQueuedRunExpired(createdAt: string): boolean {
   return Date.now() - Date.parse(createdAt) > QUEUED_LOST_GRACE_MS;
+}
+
+function hasTerminalListeners(listeners: AppContextTerminalListeners): boolean {
+  return listeners.completed.length > 0 || listeners.error.length > 0;
+}
+
+function cloneTerminalListeners(listeners: AppContextTerminalListeners): AppContextTerminalListeners {
+  return {
+    completed: [...listeners.completed],
+    error: [...listeners.error]
+  };
+}
+
+function mergeTerminalListeners(
+  current: AppContextTerminalListeners,
+  next: AppContextTerminalListeners
+): AppContextTerminalListeners {
+  return {
+    completed: [...current.completed, ...next.completed],
+    error: [...current.error, ...next.error]
+  };
+}
+
+function removeTerminalListeners(
+  current: AppContextTerminalListeners,
+  listenersToRemove: AppContextTerminalListeners
+): AppContextTerminalListeners {
+  return {
+    completed: removeListenerEntries(current.completed, listenersToRemove.completed),
+    error: removeListenerEntries(current.error, listenersToRemove.error)
+  };
+}
+
+function removeListenerEntries<T>(
+  currentListeners: T[],
+  listenersToRemove: T[]
+): T[] {
+  const remaining = [...currentListeners];
+
+  for (const listener of listenersToRemove) {
+    const index = remaining.indexOf(listener);
+    if (index !== -1) {
+      remaining.splice(index, 1);
+    }
+  }
+
+  return remaining;
 }

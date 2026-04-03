@@ -1,5 +1,11 @@
 import type { ServiceConfig } from "../types/config.js";
-import type { AppContext, TriggerSubmissionInput } from "../types/runtime.js";
+import type {
+  AppContext,
+  AppContextTerminalEventName,
+  AppContextTerminalListener,
+  AppContextTerminalListeners,
+  TriggerSubmissionInput
+} from "../types/runtime.js";
 import { processTriggerSubmission } from "../service/orchestration/process-trigger-submission.js";
 import type { AppRuntimeOptions } from "./default-app-runtime.js";
 
@@ -10,6 +16,10 @@ export function createAppContext(
 ): AppContext {
   let submitted = false;
   const triggers = new Map<string, { input: Record<string, unknown>; env: Record<string, string> }>();
+  const terminalListeners: AppContextTerminalListeners = {
+    completed: [],
+    error: []
+  };
   const log = runtime.logSink.child({ source: routePath });
 
   return {
@@ -31,6 +41,24 @@ export function createAppContext(
         env: payload.env ?? {}
       });
     },
+    on(eventName, listener) {
+      assertTerminalEventName(eventName);
+      if (submitted) {
+        throw new Error("Cannot register terminal listeners after submit().");
+      }
+
+      const eventListeners = terminalListeners[eventName] as AppContextTerminalListener<
+        typeof eventName
+      >[];
+      eventListeners.push(listener);
+
+      return () => {
+        const index = eventListeners.indexOf(listener);
+        if (index !== -1) {
+          eventListeners.splice(index, 1);
+        }
+      };
+    },
     submit() {
       if (submitted) {
         throw new Error("submit() may only be called once per request.");
@@ -49,7 +77,8 @@ export function createAppContext(
         workspaceRepo: runtime.workspaceRepo,
         workflowTracker: runtime.workflowTracker,
         logSink: log,
-        baseEnv: runtime.baseEnv
+        baseEnv: runtime.baseEnv,
+        terminalListeners: cloneTerminalListeners(terminalListeners)
       });
     }
   };
@@ -76,4 +105,17 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isStringMap(value: unknown): value is Record<string, string> {
   return isPlainObject(value) && Object.values(value).every((entry) => typeof entry === "string");
+}
+
+function assertTerminalEventName(value: string): asserts value is AppContextTerminalEventName {
+  if (value !== "completed" && value !== "error") {
+    throw new Error(`Unsupported terminal event '${value}'.`);
+  }
+}
+
+function cloneTerminalListeners(listeners: AppContextTerminalListeners): AppContextTerminalListeners {
+  return {
+    completed: [...listeners.completed],
+    error: [...listeners.error]
+  };
 }

@@ -132,6 +132,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Keep approved `pull_request_review` events provider-owned by ignoring them in the GitHub handler when the option is enabled, while preserving `changes_requested`, review comments, and PR issue comments.
 - Update regression coverage, fixtures, and operator docs so approved reviews are no longer documented as actionable by default.
 
+### Plan 20: Workflow terminal listeners and delayed GitHub failure reports [done]
+
+- Add a small request-scoped terminal listener API on `AppContext` and bridge it into the workflow tracker after a run is queued without changing `submit()` semantics.
+- Emit process-local terminal `completed` and `error` callbacks from the tracker while keeping persistence authoritative and isolating listener failures behind warning logs.
+- Extend the GitHub provider to post queued terminal `failed`, `error`, and `lost` outcomes back to the issue or pull request thread with focused regression coverage.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.
