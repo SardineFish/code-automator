@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -44,7 +44,13 @@ test("fileWorkflowTracker emits one completed event for terminal success", async
       matchedTrigger: "issue:open",
       executorName: "codex",
       completedAt,
-      status: "succeeded"
+      status: "succeeded",
+      repoFullName: "acme/demo",
+      installationId: 42,
+      reactionTarget: {
+        kind: "issue_comment",
+        subjectId: 99
+      }
     }
   ]);
 });
@@ -201,6 +207,67 @@ test("fileWorkflowTracker listener failures do not break terminal persistence", 
   );
 });
 
+test("fileWorkflowTracker does not replay terminal listeners across restart recovery", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "gao-terminal-restart-"));
+  const tracker = createTracker(dir);
+  const queued = await createQueuedRun(tracker);
+  let eventCount = 0;
+
+  tracker.subscribeTerminalEvents(queued.runId, {
+    completed: [
+      () => {
+        eventCount += 1;
+      }
+    ],
+    error: [
+      () => {
+        eventCount += 1;
+      }
+    ]
+  });
+
+  await writeFile(
+    queued.artifacts.resultFilePath,
+    JSON.stringify(createProcessResult(queued, "2026-04-02T00:00:10.000Z", 0))
+  );
+
+  const reloadedTracker = createTracker(dir);
+  await reloadedTracker.initialize();
+  await reloadedTracker.reconcileActiveRuns(
+    {
+      async run() {
+        throw new Error("should not be called");
+      },
+      async startDetached() {
+        throw new Error("should not be called");
+      },
+      isProcessRunning() {
+        return false;
+      },
+      async readDetachedResult(resultFilePath) {
+        if (resultFilePath === queued.artifacts.resultFilePath) {
+          return createProcessResult(queued, "2026-04-02T00:00:10.000Z", 0);
+        }
+
+        return null;
+      }
+    },
+    {
+      async createRunWorkspace() {
+        throw new Error("should not be called");
+      },
+      async removeWorkspace() {}
+    },
+    {
+      enabled: false,
+      baseDir: "/tmp",
+      cleanupAfterRun: false
+    }
+  );
+
+  assert.equal(eventCount, 0);
+});
+
 function createTracker(dir: string, logRecords?: CapturedLogRecord[]): WorkflowTracker {
   return createFileWorkflowTracker(
     {
@@ -223,7 +290,11 @@ async function createQueuedRun(tracker: WorkflowTracker) {
       executorName: "codex",
       repoFullName: "acme/demo",
       actorLogin: "octocat",
-      installationId: 42
+      installationId: 42,
+      reactionTarget: {
+        kind: "issue_comment",
+        subjectId: 99
+      }
     },
     ""
   );

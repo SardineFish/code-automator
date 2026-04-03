@@ -1,4 +1,4 @@
-import type { WorkflowRunContext } from "../../types/tracking.js";
+import type { WorkflowRunContext, WorkflowRunReactionTarget } from "../../types/tracking.js";
 
 export function extractWorkflowRunContext(input: Record<string, unknown>): Partial<WorkflowRunContext> {
   return {
@@ -6,7 +6,8 @@ export function extractWorkflowRunContext(input: Record<string, unknown>): Parti
     eventName: readString(input.event),
     repoFullName: readString(input.repo),
     actorLogin: readString(input.user),
-    installationId: readInteger(input.installationId)
+    installationId: readInteger(input.installationId),
+    reactionTarget: readReactionTarget(input)
   };
 }
 
@@ -28,4 +29,29 @@ function readString(value: unknown): string | undefined {
 
 function readInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) ? value : undefined;
+}
+
+function readReactionTarget(input: Record<string, unknown>): WorkflowRunReactionTarget | undefined {
+  const kind = readReactionKind(input.githubReactionKind);
+  const subjectId = readInteger(input.githubReactionSubjectId);
+
+  if (!kind || subjectId === undefined) {
+    return undefined;
+  }
+
+  if (kind === "pull_request_review") {
+    const nodeId = readString(input.githubReactionNodeId);
+    return nodeId ? { kind, subjectId, nodeId } : undefined;
+  }
+
+  return { kind, subjectId };
+}
+
+function readReactionKind(value: unknown): WorkflowRunReactionTarget["kind"] | undefined {
+  return value === "issue" ||
+    value === "issue_comment" ||
+    value === "pull_request_review" ||
+    value === "pull_request_review_comment"
+    ? value
+    : undefined;
 }

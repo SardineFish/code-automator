@@ -33,6 +33,7 @@ function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
 test("processTriggerSubmission launches the first matching workflow with matched trigger input and env", async () => {
   const commands: string[] = [];
   const envValues: NodeJS.ProcessEnv[] = [];
+  let queuedContext: Parameters<NonNullable<Parameters<typeof processTriggerSubmission>[0]["workflowTracker"]["createQueuedRun"]>>[0] | undefined;
   const running: string[] = [];
   const subscribedRuns: string[] = [];
   const subscribedListenerCounts: string[] = [];
@@ -42,7 +43,15 @@ test("processTriggerSubmission launches the first matching workflow with matched
     triggers: [
       {
         name: "issue:command:plan",
-        input: { event: "issue:command:plan", issueId: "7", user: "octocat" },
+        input: {
+          event: "issue:command:plan",
+          issueId: "7",
+          repo: "acme/demo",
+          user: "octocat",
+          installationId: 42,
+          githubReactionKind: "issue_comment",
+          githubReactionSubjectId: 99
+        },
         env: { GH_TOKEN: "token-1", SHARED: "trigger" }
       },
       {
@@ -76,7 +85,8 @@ test("processTriggerSubmission launches the first matching workflow with matched
     },
     workflowTracker: {
       async initialize() {},
-      async createQueuedRun() {
+      async createQueuedRun(context) {
+        queuedContext = context;
         return createQueuedRunRecord("run-1");
       },
       subscribeTerminalEvents(runId, listeners) {
@@ -111,6 +121,21 @@ test("processTriggerSubmission launches the first matching workflow with matched
   assert.equal(result.reason, "queued");
   assert.equal(result.workflowName, "issue-plan");
   assert.equal(result.matchedTrigger, "issue:command:plan");
+  assert.deepEqual(queuedContext, {
+    source: "/gh-hook",
+    deliveryId: undefined,
+    eventName: "issue:command:plan",
+    workflowName: "issue-plan",
+    matchedTrigger: "issue:command:plan",
+    executorName: "codex",
+    repoFullName: "acme/demo",
+    actorLogin: "octocat",
+    installationId: 42,
+    reactionTarget: {
+      kind: "issue_comment",
+      subjectId: 99
+    }
+  });
   assert.deepEqual(subscribedListenerCounts, ["1:1"]);
   await waitForCondition(() => running.length === 1);
   assert.deepEqual(commands, ["codex exec 'Plan issue 7'"]);

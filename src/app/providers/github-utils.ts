@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 import { RequestBodyError, readRequestBody } from "../../runtime/http/read-request-body.js";
 import type { WebhookGateContext } from "../../types/runtime.js";
+import type { WorkflowRunReactionTarget } from "../../types/tracking.js";
 import type { GitHubReview } from "../../types/workflow-input.js";
 
 const SUPPORTED_COMMANDS = new Set(["plan", "approve"]);
@@ -159,14 +160,44 @@ export function respond(response: ServerResponse, statusCode: number, body: stri
   response.end(body);
 }
 
-export async function addCommentReaction(options: {
+export type GitHubReactionListTarget = Exclude<WorkflowRunReactionTarget, { kind: "pull_request_review" }>;
+
+export async function addGitHubReaction(options: {
   repoFullName: string;
-  subjectId: number;
-  reaction: "eyes";
+  reaction: "eyes" | "rocket";
   token: string;
-  kind: "issue" | "issue_comment" | "pull_request_review_comment";
+  target: WorkflowRunReactionTarget;
 }): Promise<void> {
-  const response = await fetch(getReactionEndpoint(options.repoFullName, options.subjectId, options.kind), {
+  if (options.target.kind === "pull_request_review") {
+    const response = await fetch("https://api.github.com/graphql", {
+      method: "POST",
+      headers: createGitHubApiHeaders(options.token, { "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        query: `
+          mutation AddReaction($subjectId: ID!, $content: ReactionContent!) {
+            addReaction(input: { subjectId: $subjectId, content: $content }) {
+              reaction {
+                content
+              }
+            }
+          }
+        `,
+        variables: {
+          subjectId: options.target.nodeId,
+          content: mapGraphqlReaction(options.reaction)
+        }
+      })
+    });
+
+    if (response.ok) {
+      return;
+    }
+
+    const body = await response.text();
+    throw new Error(`GitHub reaction request failed: ${response.status} ${body}`);
+  }
+
+  const response = await fetch(getReactionEndpoint(options.repoFullName, options.target.subjectId, options.target.kind), {
     method: "POST",
     headers: createGitHubApiHeaders(options.token, { "Content-Type": "application/json" }),
     body: JSON.stringify({ content: options.reaction })
@@ -184,7 +215,7 @@ export async function listCommentReactions(options: {
   repoFullName: string;
   subjectId: number;
   token: string;
-  kind: "issue" | "issue_comment" | "pull_request_review_comment";
+  kind: GitHubReactionListTarget["kind"];
 }): Promise<GitHubReaction[]> {
   const response = await fetch(`${getReactionEndpoint(options.repoFullName, options.subjectId, options.kind)}?per_page=100`, {
     headers: createGitHubApiHeaders(options.token)
@@ -419,7 +450,7 @@ function readSupportedSlashCommand(value: string | undefined): string | undefine
 function getReactionEndpoint(
   repoFullName: string,
   subjectId: number,
-  kind: "issue" | "issue_comment" | "pull_request_review_comment"
+  kind: GitHubReactionListTarget["kind"]
 ): string {
   const [owner, repo] = splitRepoFullName(repoFullName);
 
@@ -428,6 +459,10 @@ function getReactionEndpoint(
     : kind === "issue_comment"
       ? `https://api.github.com/repos/${owner}/${repo}/issues/comments/${subjectId}/reactions`
       : `https://api.github.com/repos/${owner}/${repo}/pulls/comments/${subjectId}/reactions`;
+}
+
+function mapGraphqlReaction(reaction: "eyes" | "rocket"): "EYES" | "ROCKET" {
+  return reaction === "eyes" ? "EYES" : "ROCKET";
 }
 
 function splitRepoFullName(repoFullName: string): [string, string] {
