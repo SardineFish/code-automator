@@ -8,7 +8,17 @@ import { createServiceConfig } from "../fixtures/service-config.js";
 test("resolveGitHubProviderConfig defaults redelivery to false", () => {
   const github = resolveGitHubProviderConfig(createServiceConfig().gh);
 
+  assert.equal(github.requireMention, true);
   assert.equal(github.redelivery, false);
+});
+
+test("resolveGitHubProviderConfig accepts requireMention false", () => {
+  const github = resolveGitHubProviderConfig({
+    ...createServiceConfig().gh,
+    requireMention: false
+  });
+
+  assert.equal(github.requireMention, false);
 });
 
 test("resolveGitHubProviderConfig accepts a redelivery poller config", () => {
@@ -24,6 +34,21 @@ test("resolveGitHubProviderConfig accepts a redelivery poller config", () => {
     intervalSeconds: 300,
     maxPerRun: 10
   });
+});
+
+test("resolveGitHubProviderConfig rejects invalid requireMention values", () => {
+  assert.throws(
+    () =>
+      resolveGitHubProviderConfig({
+        ...createServiceConfig().gh,
+        requireMention: "false"
+      }),
+    (error) => {
+      assert.ok(error instanceof ConfigError);
+      assert.match(error.message, /gh\.requireMention: Expected a boolean\./);
+      return true;
+    }
+  );
 });
 
 test("resolveGitHubProviderConfig rejects invalid redelivery values", () => {

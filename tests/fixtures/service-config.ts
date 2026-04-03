@@ -55,7 +55,7 @@ export function createServiceConfig(): AppConfig {
       },
       {
         name: "issue-at",
-        on: ["issue:comment"],
+        on: ["issue:at"],
         use: "codex",
         prompt: "Handle ${in.content}"
       },

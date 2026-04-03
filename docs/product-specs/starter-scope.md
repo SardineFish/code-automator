@@ -41,7 +41,7 @@ The shipped GitHub workflows are:
   - `use`: `claude`
   - purpose: implement the approved plan and open a PR
 - `issue-at`
-  - `on`: `issue:comment`
+  - `on`: `issue:at`
   - `use`: `codex`
   - purpose: handle a generic bot mention in an issue without writing code
 - `pr-review`
@@ -61,7 +61,9 @@ The GitHub generic issue mention workflow should render a prompt shaped like:
 Check issue ${in.issueId}. Handle the user's request: ${in.content}. Do not write any code.
 ```
 
-The GitHub provider normalizes both `@<bot-handle> /plan` and `@<bot-handle> plan` to `issue:command:plan`. The same rule applies to `approve`.
+By default, the GitHub provider normalizes `@<bot-handle> /plan` and `@<bot-handle> /approve` to issue command triggers. When `gh.requireMention` is `false`, `/plan` and `/approve` on issues also normalize without a leading mention.
+
+The GitHub provider emits `issue:at` and `pr:at` whenever `@<bot-handle>` appears anywhere in an issue or PR comment body.
 
 ## Match Precedence
 

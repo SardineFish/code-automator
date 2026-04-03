@@ -44,7 +44,7 @@ workflow:
     prompt: Plan issue \${in.issueId}
   issue-at:
     on:
-      - issue:comment
+      - issue:at
     use: claude
     prompt: Handle request \${in.content}
 `;
@@ -91,7 +91,7 @@ test("parseServiceConfig rejects unknown workflow executor", () => {
 
 test("parseServiceConfig accepts arbitrary non-empty trigger keys", () => {
   const parsed = parseServiceConfig(
-    validConfig.replace("- issue:comment", "- chat:command:triage"),
+    validConfig.replace("- issue:at", "- chat:command:triage"),
     "/tmp/configs/test.yml"
   );
 
@@ -117,7 +117,7 @@ test("parseServiceConfig requires a valid TCP port", () => {
 
 test("parseServiceConfig requires each workflow to declare at least one trigger", () => {
   const invalid = validConfig.replace(
-    "    on:\n      - issue:comment",
+    "    on:\n      - issue:at",
     "    on: []"
   );
 
@@ -129,7 +129,7 @@ test("parseServiceConfig requires each workflow to declare at least one trigger"
 });
 
 test("parseServiceConfig rejects empty trigger strings", () => {
-  const invalid = validConfig.replace("- issue:comment", "- ''");
+  const invalid = validConfig.replace("- issue:at", "- ''");
 
   assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
     assert.ok(error instanceof ConfigError);

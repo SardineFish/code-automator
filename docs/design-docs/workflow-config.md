@@ -22,6 +22,7 @@ gh:
   clientId: your-github-app-client-id
   appId: 123456
   botHandle: coding-automator
+  requireMention: true
   redelivery:
     intervalSeconds: 300
     maxPerRun: 20
@@ -59,7 +60,7 @@ workflow:
     prompt: Check issue ${in.issueId}. Assign the issue to yourself, implement your plan, and open a PR.
   issue-at:
     on:
-      - issue:comment
+      - issue:at
     use: codex
     prompt: Check issue ${in.issueId}. Handle the user's request: ${in.content}. Do not write any code.
   pr-review:
@@ -81,6 +82,7 @@ workflow:
 - `workflow`: ordered workflow definitions keyed by workflow name.
 - Any other top-level key is provider-owned configuration. The core app preserves those sections and registered providers validate them at startup.
 - The shipped startup wiring currently reads and registers `gh`. Other provider sections are preserved for future startup registration.
+- `gh.requireMention` is optional and defaults to `true`. Set it to `false` to allow issue comments and slash commands on issues without a leading bot mention.
 - `gh.redelivery` is optional. Use `false` or omit it to disable background webhook redelivery polling.
 
 ## Provider Runtime Model
