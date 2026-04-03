@@ -16,6 +16,7 @@ import {
 } from "../../src/app/providers/github-redelivery-worker.js";
 import { createNoOpLogSink } from "../fixtures/log-sink.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
+import type { AppConfig } from "../../src/types/config.js";
 
 const FIXED_NOW = new Date("2026-04-02T12:00:00.000Z");
 
@@ -24,8 +25,6 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, rec
     {
       id: 10,
       guid: "guid-retry",
-      eventName: "issue_comment",
-      action: "created",
       deliveredAt: "2026-04-02T11:40:00.000Z",
       redelivery: false,
       status: "FAILED",
@@ -34,8 +33,6 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, rec
     {
       id: 11,
       guid: "guid-retry",
-      eventName: "issue_comment",
-      action: "created",
       deliveredAt: "2026-04-02T11:45:00.000Z",
       redelivery: true,
       status: "FAILED",
@@ -44,8 +41,6 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, rec
     {
       id: 20,
       guid: "guid-ok",
-      eventName: "issue_comment",
-      action: "created",
       deliveredAt: "2026-04-02T11:30:00.000Z",
       redelivery: false,
       status: "FAILED",
@@ -54,8 +49,6 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, rec
     {
       id: 21,
       guid: "guid-ok",
-      eventName: "issue_comment",
-      action: "created",
       deliveredAt: "2026-04-02T11:35:00.000Z",
       redelivery: true,
       status: "OK",
@@ -64,8 +57,6 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, rec
     {
       id: 30,
       guid: "guid-recent",
-      eventName: "issue_comment",
-      action: "created",
       deliveredAt: "2026-04-02T11:59:45.000Z",
       redelivery: false,
       status: "FAILED",
@@ -75,12 +66,7 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, rec
 
   const candidates = selectGitHubRedeliveryCandidates(
     deliveries,
-    {
-      "guid-already-settled": {
-        settledAt: "2026-04-02T11:50:00.000Z",
-        status: "retried"
-      }
-    },
+    { "guid-already-settled": "2026-04-02T11:50:00.000Z" },
     FIXED_NOW,
     2
   );
@@ -96,6 +82,23 @@ test("createGitHubRedeliveryWorker skips deliveries rejected by the provider fil
   await createGitHubRedeliveryWorker(harness.options).runOnce();
 
   assert.deepEqual(harness.redeliveryCalls, []);
+});
+
+test("createGitHubRedeliveryWorker retries plain issue comments when requireMention is false", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createIssueCommentDetail("please plan this"),
+    customizeConfig(config) {
+      if (!config.gh) {
+        throw new Error("Missing test GitHub config.");
+      }
+
+      config.gh.requireMention = false;
+    }
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, [11]);
 });
 
 test("createGitHubRedeliveryWorker skips ignored issue comments without a mention", async (t) => {
@@ -178,17 +181,14 @@ function createIssueOpenedDetail(): GitHubAppWebhookDeliveryDetail {
   return {
     ...createDeliverySummary(11, "guid-retry"),
     eventName: "issues",
-    action: "opened",
     payload: {
       action: "opened",
-      repository: { fullName: "acme/demo" },
+      repository: { full_name: "acme/demo" },
       sender: { login: "octocat" },
       installation: { id: 42 },
       issue: {
-        body: "Need a plan",
-        id: "7",
-        isPullRequest: false,
-        number: 7
+        number: 7,
+        body: "Need a plan"
       }
     }
   };
@@ -201,17 +201,17 @@ function createIssueCommentDetail(
   return {
     ...createDeliverySummary(11, "guid-retry"),
     eventName: "issue_comment",
-    action: "created",
     payload: {
       action: "created",
-      repository: { fullName: "acme/demo" },
+      repository: { full_name: "acme/demo" },
       sender: { login: options?.senderLogin ?? "octocat" },
       installation: { id: 42 },
       issue: {
+        number: 7,
         body: "Need a plan",
-        id: "7",
-        isPullRequest: options?.pullRequest ?? false,
-        number: 7
+        ...(options?.pullRequest
+          ? { pull_request: { url: "https://api.github.com/repos/acme/demo/pulls/7" } }
+          : {})
       },
       comment: {
         body,
@@ -225,14 +225,12 @@ function createReviewCommentDetail(body: string): GitHubAppWebhookDeliveryDetail
   return {
     ...createDeliverySummary(11, "guid-retry"),
     eventName: "pull_request_review_comment",
-    action: "created",
     payload: {
       action: "created",
-      repository: { fullName: "acme/demo" },
+      repository: { full_name: "acme/demo" },
       sender: { login: "octocat" },
       installation: { id: 42 },
-      pullRequest: {
-        id: "8",
+      pull_request: {
         number: 8
       },
       comment: {
@@ -247,8 +245,6 @@ function createDeliverySummary(id: number, guid: string): GitHubAppWebhookDelive
   return {
     id,
     guid,
-    eventName: "issue_comment",
-    action: "created",
     deliveredAt: "2026-04-02T11:45:00.000Z",
     redelivery: true,
     status: "FAILED",
@@ -260,6 +256,7 @@ async function createWorkerHarness(
   t: TestContext,
   options: {
     detail: GitHubAppWebhookDeliveryDetail;
+    customizeConfig?: (config: AppConfig) => void;
     issueState?: string;
     pullRequestState?: string;
     reactions?: unknown[];
@@ -269,6 +266,7 @@ async function createWorkerHarness(
   const env = await createGitHubAppEnv(dir);
   const config = createServiceConfig();
   const trackingDir = path.join(dir, "tracking");
+  options.customizeConfig?.(config);
   const githubConfig = config.gh;
   const redeliveryCalls: number[] = [];
   const originalFetch = global.fetch;

@@ -1,9 +1,10 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { getWhitelistRejectionReason } from "../../service/orchestration/check-whitelist.js";
 import type { TrackingConfig } from "../../types/config.js";
 import type { LogSink } from "../../types/logging.js";
-import { evaluateGitHubDelivery, type GitHubReactionTarget } from "./github-delivery-relevance.js";
+import type { WebhookGateContext } from "../../types/runtime.js";
 import type {
   GitHubAppWebhookDelivery,
   GitHubAppWebhookDeliveryClient
@@ -14,7 +15,13 @@ import {
   getGitHubAppJwtProvider,
   getInstallationTokenProvider,
   listCommentReactions,
+  parseIssueMention,
+  readGate,
   readGitHubThreadState,
+  readId,
+  readInteger,
+  readObject,
+  readString,
   requireEnv,
   type GitHubReaction
 } from "./github-utils.js";
@@ -23,22 +30,31 @@ const DELIVERY_LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
 const DELIVERY_SETTLE_DELAY_MS = 60 * 1000;
 const CHECKPOINT_OVERLAP_MS = 60 * 1000;
 
-type GitHubSettledGuidStatus =
-  | "retried"
-  | "skipped_already_handled"
-  | "skipped_by_provider_filter";
-
 interface GitHubRedeliveryState {
   version: 1;
   checkpoint?: string;
-  settledGuids: Record<string, GitHubSettledGuidRecord>;
+  settledGuids: Record<string, string>;
 }
 
-interface GitHubSettledGuidRecord {
-  reason?: string;
-  settledAt: string;
-  status: GitHubSettledGuidStatus;
+interface GitHubReactionTarget {
+  kind: "issue" | "issue_comment" | "pull_request_review_comment";
+  subjectId: number;
 }
+
+interface GitHubRelevantDelivery {
+  gate: WebhookGateContext;
+  reactionTarget?: GitHubReactionTarget;
+  threadTarget?: GitHubThreadTarget;
+}
+
+interface GitHubThreadTarget {
+  kind: "issue" | "pull_request";
+  number: number;
+}
+
+type GitHubDeliveryEvaluation =
+  | { gate?: WebhookGateContext; reason: string; status: "ignored" }
+  | { delivery: GitHubRelevantDelivery; status: "relevant" };
 
 export interface GitHubRedeliveryWorker {
   start(): void;
@@ -132,11 +148,11 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
     for (const candidate of candidates) {
       try {
         const detail = await client.getDelivery(jwt, candidate.id);
-        const evaluation = evaluateGitHubDelivery(detail.eventName, detail.payload, options.github);
+        const evaluation = evaluateRedeliveryDelivery(detail.eventName, detail.payload, options.github);
 
         if (evaluation.status === "ignored") {
           skippedByProviderFilter += 1;
-          settleGuid(state, candidate.guid, scanStartedAtIso, "skipped_by_provider_filter", evaluation.reason);
+          settleGuid(state, candidate.guid, scanStartedAtIso);
           await saveState(stateFilePath, state);
           log.info({
             message: "skipped GitHub App webhook delivery by provider filter",
@@ -158,19 +174,15 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
           : undefined;
 
         if (threadState === "closed") {
-          const reason =
-            evaluation.delivery.threadTarget?.kind === "pull_request"
-              ? "pull_request_closed"
-              : "issue_closed";
           skippedByProviderFilter += 1;
-          settleGuid(state, candidate.guid, scanStartedAtIso, "skipped_by_provider_filter", reason);
-          await saveState(stateFilePath, state);
+          settleGuid(state, candidate.guid, scanStartedAtIso);
           log.info({
             message: "skipped GitHub App webhook delivery by provider filter",
             deliveryId: candidate.id,
             guid: candidate.guid,
-            reason
+            reason: evaluation.delivery.threadTarget?.kind === "pull_request" ? "pull_request_closed" : "issue_closed"
           });
+          await saveState(stateFilePath, state);
           continue;
         }
 
@@ -183,7 +195,7 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
           )
         ) {
           skippedAlreadyHandled += 1;
-          settleGuid(state, candidate.guid, scanStartedAtIso, "skipped_already_handled", "bot_eyes_reaction");
+          settleGuid(state, candidate.guid, scanStartedAtIso);
           await saveState(stateFilePath, state);
           log.info({
             message: "skipped GitHub App webhook delivery because already handled",
@@ -196,7 +208,7 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
 
         await client.redeliverDelivery(jwt, candidate.id);
         retried += 1;
-        settleGuid(state, candidate.guid, scanStartedAtIso, "retried", "relevant_unhandled_delivery");
+        settleGuid(state, candidate.guid, scanStartedAtIso);
         await saveState(stateFilePath, state);
         log.info({
           message: "retried GitHub App webhook delivery",
@@ -243,7 +255,7 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
 
 export function selectGitHubRedeliveryCandidates(
   deliveries: GitHubAppWebhookDelivery[],
-  settledGuids: Record<string, GitHubSettledGuidRecord>,
+  settledGuids: Record<string, string>,
   now: Date,
   maxPerRun: number
 ): GitHubAppWebhookDelivery[] {
@@ -406,13 +418,8 @@ function normalizeState(value: unknown): GitHubRedeliveryState {
   };
   const settledGuids = normalizeSettledGuids(parsed.settledGuids);
 
-  if (Object.keys(settledGuids).length === 0) {
-    for (const [guid, settledAt] of Object.entries(normalizeLegacyRetriedGuids(parsed.retriedGuids))) {
-      settledGuids[guid] = {
-        settledAt,
-        status: "retried"
-      };
-    }
+  for (const [guid, settledAt] of Object.entries(normalizeSettledGuids(parsed.retriedGuids))) {
+    settledGuids[guid] ??= settledAt;
   }
 
   return {
@@ -422,43 +429,7 @@ function normalizeState(value: unknown): GitHubRedeliveryState {
   };
 }
 
-function normalizeSettledGuids(value: unknown): Record<string, GitHubSettledGuidRecord> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return {};
-  }
-
-  const result: Record<string, GitHubSettledGuidRecord> = {};
-
-  for (const [guid, entry] of Object.entries(value)) {
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
-      continue;
-    }
-
-    const settledGuid = entry as {
-      reason?: unknown;
-      settledAt?: unknown;
-      status?: unknown;
-    };
-
-    if (
-      typeof settledGuid.settledAt !== "string" ||
-      settledGuid.settledAt.trim() === "" ||
-      !isSettledGuidStatus(settledGuid.status)
-    ) {
-      continue;
-    }
-
-    result[guid] = {
-      settledAt: settledGuid.settledAt,
-      status: settledGuid.status,
-      reason: typeof settledGuid.reason === "string" && settledGuid.reason.trim() !== "" ? settledGuid.reason : undefined
-    };
-  }
-
-  return result;
-}
-
-function normalizeLegacyRetriedGuids(value: unknown): Record<string, string> {
+function normalizeSettledGuids(value: unknown): Record<string, string> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return {};
   }
@@ -468,6 +439,17 @@ function normalizeLegacyRetriedGuids(value: unknown): Record<string, string> {
   for (const [guid, settledAt] of Object.entries(value)) {
     if (typeof settledAt === "string" && settledAt.trim() !== "") {
       result[guid] = settledAt;
+      continue;
+    }
+
+    if (
+      typeof settledAt === "object" &&
+      settledAt !== null &&
+      !Array.isArray(settledAt) &&
+      typeof (settledAt as { settledAt?: unknown }).settledAt === "string" &&
+      (settledAt as { settledAt: string }).settledAt.trim() !== ""
+    ) {
+      result[guid] = (settledAt as { settledAt: string }).settledAt;
     }
   }
 
@@ -476,11 +458,11 @@ function normalizeLegacyRetriedGuids(value: unknown): Record<string, string> {
 
 function pruneGitHubRedeliveryState(state: GitHubRedeliveryState, now: Date): GitHubRedeliveryState {
   const cutoffMs = now.getTime() - DELIVERY_LOOKBACK_MS;
-  const settledGuids: Record<string, GitHubSettledGuidRecord> = {};
+  const settledGuids: Record<string, string> = {};
 
-  for (const [guid, entry] of Object.entries(state.settledGuids)) {
-    if (!Number.isNaN(Date.parse(entry.settledAt)) && Date.parse(entry.settledAt) >= cutoffMs) {
-      settledGuids[guid] = entry;
+  for (const [guid, settledAt] of Object.entries(state.settledGuids)) {
+    if (!Number.isNaN(Date.parse(settledAt)) && Date.parse(settledAt) >= cutoffMs) {
+      settledGuids[guid] = settledAt;
     }
   }
 
@@ -496,6 +478,128 @@ function createEmptyState(): GitHubRedeliveryState {
     version: 1,
     settledGuids: {}
   };
+}
+
+function evaluateRedeliveryDelivery(
+  eventName: string,
+  payload: Record<string, unknown>,
+  github: ResolvedGitHubProviderConfig
+): GitHubDeliveryEvaluation {
+  const gate = readGate(payload);
+
+  if (!gate) {
+    return { status: "ignored", reason: "missing_gate_context" };
+  }
+
+  const rejectionReason = getWhitelistRejectionReason(github.whitelist, gate);
+  if (rejectionReason) {
+    return { status: "ignored", gate, reason: rejectionReason };
+  }
+
+  const action = readString(payload, "action");
+  const issue = readObject(payload, "issue");
+  const comment = readObject(payload, "comment");
+  const review = readObject(payload, "review");
+  const pullRequest = readObject(payload, "pull_request");
+
+  if (eventName === "issues" && action === "opened") {
+    const subjectNumber = readInteger(issue ?? {}, "number");
+
+    if (!readId(issue) || subjectNumber === undefined) {
+      return { status: "ignored", gate, reason: "invalid_delivery" };
+    }
+
+    return {
+      status: "relevant",
+      delivery: {
+        gate,
+        reactionTarget: { subjectId: subjectNumber, kind: "issue" },
+        threadTarget: { number: subjectNumber, kind: "issue" }
+      }
+    };
+  }
+
+  if (eventName === "issue_comment" && action === "created") {
+    const issueId = readId(issue);
+    const subjectNumber = readInteger(issue ?? {}, "number");
+
+    if (!issueId || subjectNumber === undefined || !comment) {
+      return { status: "ignored", gate, reason: "invalid_delivery" };
+    }
+
+    const commentId = readInteger(comment, "id");
+
+    if (readObject(issue ?? {}, "pull_request")) {
+      return {
+        status: "relevant",
+        delivery: {
+          gate,
+          reactionTarget: readReactionTarget(commentId, "issue_comment"),
+          threadTarget: { number: subjectNumber, kind: "pull_request" }
+        }
+      };
+    }
+
+    const content = readString(comment, "body") ?? "";
+    const mention = parseIssueMention(content, github.botHandle, github.requireMention);
+
+    if (!mention.hasMention && github.requireMention) {
+      return { status: "ignored", gate, reason: "not_mentioned" };
+    }
+
+    return {
+      status: "relevant",
+      delivery: {
+        gate,
+        reactionTarget: readReactionTarget(commentId, "issue_comment"),
+        threadTarget: { number: subjectNumber, kind: "issue" }
+      }
+    };
+  }
+
+  if (eventName === "pull_request_review_comment" && action === "created") {
+    const prId = readId(pullRequest);
+    const subjectNumber = readInteger(pullRequest ?? {}, "number");
+
+    if (!prId || subjectNumber === undefined || !comment) {
+      return { status: "ignored", gate, reason: "invalid_delivery" };
+    }
+
+    return {
+      status: "relevant",
+      delivery: {
+        gate,
+        reactionTarget: readReactionTarget(readInteger(comment, "id"), "pull_request_review_comment"),
+        threadTarget: { number: subjectNumber, kind: "pull_request" }
+      }
+    };
+  }
+
+  if (eventName === "pull_request_review") {
+    const prId = readId(pullRequest);
+    const subjectNumber = readInteger(pullRequest ?? {}, "number");
+
+    if (!prId || subjectNumber === undefined || !review) {
+      return { status: "ignored", gate, reason: "invalid_delivery" };
+    }
+
+    return {
+      status: "relevant",
+      delivery: {
+        gate,
+        threadTarget: { number: subjectNumber, kind: "pull_request" }
+      }
+    };
+  }
+
+  return { status: "ignored", gate, reason: "unsupported_event" };
+}
+
+function readReactionTarget(
+  subjectId: number | undefined,
+  kind: GitHubReactionTarget["kind"]
+): GitHubReactionTarget | undefined {
+  return subjectId === undefined ? undefined : { subjectId, kind };
 }
 
 function isSuccessfulDelivery(delivery: GitHubAppWebhookDelivery): boolean {
@@ -518,27 +622,13 @@ function isErrnoException(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === code;
 }
 
-function isSettledGuidStatus(value: unknown): value is GitHubSettledGuidStatus {
-  return value === "retried" || value === "skipped_already_handled" || value === "skipped_by_provider_filter";
-}
-
 function logWorkerError(log: LogSink, error: unknown): void {
   log.error({
-    message: "GitHub App webhook redelivery scan failed",
+    message: "GitHub App webhook delivery scan failed",
     errorMessage: error instanceof Error ? error.message : "Unknown redelivery worker error."
   });
 }
 
-function settleGuid(
-  state: GitHubRedeliveryState,
-  guid: string,
-  settledAt: string,
-  status: GitHubSettledGuidStatus,
-  reason?: string
-): void {
-  state.settledGuids[guid] = {
-    settledAt,
-    status,
-    reason
-  };
+function settleGuid(state: GitHubRedeliveryState, guid: string, settledAt: string): void {
+  state.settledGuids[guid] = settledAt;
 }

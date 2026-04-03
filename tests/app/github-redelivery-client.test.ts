@@ -32,7 +32,6 @@ test("fetchGitHubAppWebhookDeliveryClient normalizes delivery list pages and det
           id: 17,
           guid: "guid-17",
           event: "issue_comment",
-          action: "created",
           delivered_at: "2026-04-02T11:30:00.000Z",
           redelivery: false,
           status: "FAILED",
@@ -67,8 +66,6 @@ test("fetchGitHubAppWebhookDeliveryClient normalizes delivery list pages and det
         {
           id: 17,
           guid: "guid-17",
-          event: "issue_comment",
-          action: "created",
           delivered_at: "2026-04-02T11:30:00.000Z",
           redelivery: false,
           status: "FAILED",
@@ -96,8 +93,6 @@ test("fetchGitHubAppWebhookDeliveryClient normalizes delivery list pages and det
     {
       id: 17,
       guid: "guid-17",
-      eventName: "issue_comment",
-      action: "created",
       deliveredAt: "2026-04-02T11:30:00.000Z",
       redelivery: false,
       status: "FAILED",
@@ -109,28 +104,24 @@ test("fetchGitHubAppWebhookDeliveryClient normalizes delivery list pages and det
     id: 17,
     guid: "guid-17",
     eventName: "issue_comment",
-    action: "created",
     deliveredAt: "2026-04-02T11:30:00.000Z",
     redelivery: false,
     status: "FAILED",
     statusCode: 500,
     payload: {
       action: "created",
-      repository: { fullName: "acme/demo" },
+      repository: { full_name: "acme/demo" },
       sender: { login: "octocat" },
       installation: { id: 42 },
       issue: {
+        number: 7,
         body: "Need a plan",
-        id: "7",
-        isPullRequest: false,
-        number: 7
+        state: "open"
       },
       comment: {
-        body: "@github-agent-orchestrator /approve",
-        id: 99
-      },
-      pullRequest: undefined,
-      review: undefined
+        id: 99,
+        body: "@github-agent-orchestrator /approve"
+      }
     }
   });
 

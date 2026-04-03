@@ -1,22 +1,17 @@
-import {
-  type GitHubDeliveryPayload,
-  normalizeGitHubDeliveryPayload
-} from "./github-delivery-relevance.js";
 import { asObject, readInteger, readString } from "./github-utils.js";
 
 export interface GitHubAppWebhookDelivery {
-  action?: string;
-  deliveredAt: string;
-  eventName: string;
-  guid: string;
   id: number;
+  guid: string;
+  deliveredAt: string;
   redelivery: boolean;
   status: string;
   statusCode?: number;
 }
 
 export interface GitHubAppWebhookDeliveryDetail extends GitHubAppWebhookDelivery {
-  payload: GitHubDeliveryPayload;
+  eventName: string;
+  payload: Record<string, unknown>;
 }
 
 export interface GitHubAppWebhookDeliveryPage {
@@ -95,13 +90,27 @@ function normalizeDelivery(value: unknown): GitHubAppWebhookDelivery | null {
     return null;
   }
 
-  const summary = normalizeDeliverySummary(delivery);
-  return summary ? { ...summary, eventName: readString(delivery, "event") ?? "" } : null;
+  const id = readInteger(delivery, "id");
+  const guid = readString(delivery, "guid");
+  const deliveredAt = readString(delivery, "delivered_at");
+
+  if (id === undefined || !guid || !deliveredAt || Number.isNaN(Date.parse(deliveredAt))) {
+    return null;
+  }
+
+  return {
+    id,
+    guid,
+    deliveredAt,
+    redelivery: typeof delivery.redelivery === "boolean" ? delivery.redelivery : false,
+    status: readString(delivery, "status") ?? "",
+    statusCode: readInteger(delivery, "status_code")
+  };
 }
 
 function normalizeDeliveryDetail(value: unknown): GitHubAppWebhookDeliveryDetail | null {
   const delivery = asObject(value);
-  const summary = delivery ? normalizeDeliverySummary(delivery) : null;
+  const summary = delivery ? normalizeDelivery(delivery) : null;
   const request = delivery ? asObject(delivery.request) : null;
   const payload = request ? asObject(request.payload) : null;
   const eventName = delivery ? readString(delivery, "event") : undefined;
@@ -113,27 +122,7 @@ function normalizeDeliveryDetail(value: unknown): GitHubAppWebhookDeliveryDetail
   return {
     ...summary,
     eventName,
-    payload: normalizeGitHubDeliveryPayload(payload)
-  };
-}
-
-function normalizeDeliverySummary(value: Record<string, unknown>) {
-  const id = readInteger(value, "id");
-  const guid = readString(value, "guid");
-  const deliveredAt = readString(value, "delivered_at");
-
-  if (id === undefined || !guid || !deliveredAt || Number.isNaN(Date.parse(deliveredAt))) {
-    return null;
-  }
-
-  return {
-    id,
-    guid,
-    deliveredAt,
-    action: readString(value, "action"),
-    redelivery: typeof value.redelivery === "boolean" ? value.redelivery : false,
-    status: readString(value, "status") ?? "",
-    statusCode: readInteger(value, "status_code")
+    payload
   };
 }
 

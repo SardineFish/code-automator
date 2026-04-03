@@ -7,11 +7,6 @@ import path from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { App } from "../../src/app/app.js";
-import {
-  evaluateGitHubDelivery,
-  normalizeGitHubDeliveryPayload
-} from "../../src/app/providers/github-delivery-relevance.js";
-import { resolveGitHubProviderConfig } from "../../src/app/providers/github-config.js";
 import { githubProvider } from "../../src/app/providers/github-provider.js";
 import {
   issueCommentPayload,
@@ -21,55 +16,8 @@ import {
 } from "../fixtures/github-webhooks.js";
 import { createNoOpLogSink } from "../fixtures/log-sink.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
+import type { AppConfig } from "../../src/types/config.js";
 import type { ActiveWorkflowRunRecord, WorkflowRunArtifacts } from "../../src/types/tracking.js";
-
-test("GitHub delivery evaluator keeps non-mentioned issue comments ignored", () => {
-  const config = createServiceConfig().gh;
-
-  if (!config) {
-    throw new Error("Missing test GitHub config.");
-  }
-
-  const evaluation = evaluateGitHubDelivery(
-    "issue_comment",
-    normalizeGitHubDeliveryPayload(issueCommentPayload("please plan this")),
-    resolveGitHubProviderConfig(config)
-  );
-
-  assert.deepEqual(evaluation, {
-    status: "ignored",
-    gate: {
-      actorLogin: "octocat",
-      installationId: 42,
-      repoFullName: "acme/demo"
-    },
-    reason: "not_mentioned"
-  });
-});
-
-test("GitHub delivery evaluator preserves command and generic mention routing", () => {
-  const config = createServiceConfig().gh;
-
-  if (!config) {
-    throw new Error("Missing test GitHub config.");
-  }
-
-  const evaluation = evaluateGitHubDelivery(
-    "issue_comment",
-    normalizeGitHubDeliveryPayload(issueCommentPayload("@github-agent-orchestrator /approve")),
-    resolveGitHubProviderConfig(config)
-  );
-
-  assert.equal(evaluation.status, "relevant");
-  assert.deepEqual(evaluation.delivery.triggers.map((trigger) => trigger.name), [
-    "issue:command:approve",
-    "issue:comment"
-  ]);
-  assert.deepEqual(evaluation.delivery.reactionTarget, {
-    subjectId: 99,
-    kind: "issue_comment"
-  });
-});
 
 function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
   const artifacts: WorkflowRunArtifacts = {
@@ -130,7 +78,34 @@ test("GitHub provider ignores plain issue comments without a leading mention", a
   assert.deepEqual(reactionCalls, []);
 });
 
-test("GitHub provider treats removed issue command aliases as generic mentions", async (t) => {
+test("GitHub provider routes plain issue comments when requireMention is false", async (t) => {
+  const { commands, reactionCalls, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      if (!config.gh) {
+        throw new Error("Missing test GitHub config.");
+      }
+
+      config.gh.requireMention = false;
+      config.workflow[2] = {
+        name: "issue-comment",
+        on: ["issue:comment"],
+        use: "codex",
+        prompt: "Comment ${in.content}"
+      };
+    }
+  });
+  const response = await signedRequest(url, issueCommentPayload("please plan this"), "issue_comment");
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Comment please plan this'"]);
+  assert.deepEqual(started, ["codex exec 'Comment please plan this'"]);
+  assert.deepEqual(reactionCalls, [
+    "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes"
+  ]);
+});
+
+test("GitHub provider treats unsupported slash issue commands as generic mentions", async (t) => {
   const { commands, commentCalls, reactionCalls, started, url } = await startGitHubApp(t);
   const response = await signedRequest(
     url,
@@ -146,6 +121,115 @@ test("GitHub provider treats removed issue command aliases as generic mentions",
   assert.deepEqual(reactionCalls, [
     "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes"
   ]);
+});
+
+test("GitHub provider treats bare issue command names as generic mentions", async (t) => {
+  const { commands, started, url } = await startGitHubApp(t);
+  const response = await signedRequest(
+    url,
+    issueCommentPayload("@github-agent-orchestrator plan"),
+    "issue_comment"
+  );
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Handle plan'"]);
+  assert.deepEqual(started, ["codex exec 'Handle plan'"]);
+});
+
+test("GitHub provider accepts bare slash issue commands when requireMention is false", async (t) => {
+  const { commands, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      if (!config.gh) {
+        throw new Error("Missing test GitHub config.");
+      }
+
+      config.gh.requireMention = false;
+    }
+  });
+  const response = await signedRequest(url, issueCommentPayload("/plan"), "issue_comment");
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Plan issue 7'"]);
+  assert.deepEqual(started, ["codex exec 'Plan issue 7'"]);
+});
+
+test("GitHub provider emits issue:at for inline mentions", async (t) => {
+  const { commands, started, url } = await startGitHubApp(t);
+  const response = await signedRequest(
+    url,
+    issueCommentPayload("please @github-agent-orchestrator summarize"),
+    "issue_comment"
+  );
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Handle please @github-agent-orchestrator summarize'"]);
+  assert.deepEqual(started, ["codex exec 'Handle please @github-agent-orchestrator summarize'"]);
+});
+
+test("GitHub provider emits pr:at for mentioned PR comments and review comments", async (t) => {
+  const { commands, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      config.workflow = [
+        {
+          name: "pr-at",
+          on: ["pr:at"],
+          use: "codex",
+          prompt: "At PR ${in.prId}: ${in.content}"
+        },
+        ...config.workflow
+      ];
+    }
+  });
+  const scenarios = [
+    {
+      eventName: "issue_comment",
+      payload: issueCommentPayload("please @github-agent-orchestrator review", { pullRequest: true }),
+      expectedCommand: "codex exec 'At PR 7: please @github-agent-orchestrator review'"
+    },
+    {
+      eventName: "pull_request_review_comment",
+      payload: reviewCommentPayload("please @github-agent-orchestrator review"),
+      expectedCommand: "codex exec 'At PR 8: please @github-agent-orchestrator review'"
+    }
+  ];
+
+  for (const scenario of scenarios) {
+    const response = await signedRequest(url, scenario.payload, scenario.eventName);
+    assert.equal(response.status, 202);
+  }
+
+  await waitForCondition(() => started.length === scenarios.length);
+  assert.deepEqual(commands, scenarios.map((scenario) => scenario.expectedCommand));
+  assert.deepEqual(started, scenarios.map((scenario) => scenario.expectedCommand));
+});
+
+test("GitHub provider preserves multi-line PR mention content", async (t) => {
+  const { commands, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      config.workflow = [
+        {
+          name: "pr-at",
+          on: ["pr:at"],
+          use: "codex",
+          prompt: "At PR ${in.prId}: ${in.content}"
+        },
+        ...config.workflow
+      ];
+    }
+  });
+  const response = await signedRequest(
+    url,
+    reviewCommentPayload("@github-agent-orchestrator review this\nwith more context"),
+    "pull_request_review_comment"
+  );
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'At PR 8: review this\nwith more context'"]);
+  assert.deepEqual(started, ["codex exec 'At PR 8: review this\nwith more context'"]);
 });
 
 test("GitHub provider routes the documented workflows through the provider app", async (t) => {
@@ -240,7 +324,10 @@ test("GitHub provider reports PR-path runtime failures on the PR thread", async 
 
 async function startGitHubApp(
   t: TestContext,
-  options?: { createQueuedRunError?: Error }
+  options?: {
+    createQueuedRunError?: Error;
+    customizeConfig?: (config: AppConfig) => void;
+  }
 ) {
   const config = {
     ...createServiceConfig(),
@@ -249,6 +336,7 @@ async function startGitHubApp(
       port: 0
     }
   };
+  options?.customizeConfig?.(config);
   const github = config.gh;
 
   if (!github) {
