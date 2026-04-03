@@ -77,7 +77,7 @@ export function reviewCommentPayload(body: string) {
   };
 }
 
-export function reviewPayload(body: string, state = "approved") {
+export function reviewPayload(body: string, state = "changes_requested") {
   return {
     action: "submitted",
     repository: baseRepository,

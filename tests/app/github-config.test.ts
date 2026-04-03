@@ -9,6 +9,7 @@ test("resolveGitHubProviderConfig defaults redelivery to false", () => {
   const github = resolveGitHubProviderConfig(createServiceConfig().gh);
 
   assert.equal(github.requireMention, true);
+  assert.equal(github.ignoreApprovalReview, true);
   assert.equal(github.redelivery, false);
 });
 
@@ -19,6 +20,22 @@ test("resolveGitHubProviderConfig accepts requireMention false", () => {
   });
 
   assert.equal(github.requireMention, false);
+});
+
+test("resolveGitHubProviderConfig accepts ignoreApprovalReview true and false", () => {
+  const config = createServiceConfig().gh;
+
+  const ignoresApprovedReviews = resolveGitHubProviderConfig({
+    ...config,
+    ignoreApprovalReview: true
+  });
+  const routesApprovedReviews = resolveGitHubProviderConfig({
+    ...config,
+    ignoreApprovalReview: false
+  });
+
+  assert.equal(ignoresApprovedReviews.ignoreApprovalReview, true);
+  assert.equal(routesApprovedReviews.ignoreApprovalReview, false);
 });
 
 test("resolveGitHubProviderConfig accepts a redelivery poller config", () => {
@@ -46,6 +63,21 @@ test("resolveGitHubProviderConfig rejects invalid requireMention values", () => 
     (error) => {
       assert.ok(error instanceof ConfigError);
       assert.match(error.message, /gh\.requireMention: Expected a boolean\./);
+      return true;
+    }
+  );
+});
+
+test("resolveGitHubProviderConfig rejects invalid ignoreApprovalReview values", () => {
+  assert.throws(
+    () =>
+      resolveGitHubProviderConfig({
+        ...createServiceConfig().gh,
+        ignoreApprovalReview: "false"
+      }),
+    (error) => {
+      assert.ok(error instanceof ConfigError);
+      assert.match(error.message, /gh\.ignoreApprovalReview: Expected a boolean\./);
       return true;
     }
   );
