@@ -47,7 +47,8 @@ import { resolveGitHubProviderConfig } from "./github-config.js";
  *   Emitted for GitHub "issue_comment" events on pull requests and for
  *   GitHub "pull_request_review_comment" events.
  * - pr:review
- *   Emitted for GitHub "pull_request_review" events.
+ *   Emitted for GitHub "pull_request_review" events, except approved reviews
+ *   when gh.ignoreApprovalReview is enabled.
  *
  * The provider keeps the workflow input intentionally small. It emits only the
  * fields needed by the current workflows: event, user, repo, issueId, prId,
@@ -269,6 +270,15 @@ export async function githubProvider(
       }
 
       const reviewState = readString(review, "state");
+      if (reviewState === "approved" && github.ignoreApprovalReview) {
+        requestLog.info({
+          message: "processed webhook delivery",
+          status: "ignored",
+          reason: "approved_review_ignored"
+        });
+        return respond(response, 202, "Accepted");
+      }
+
       const prReview = mapReviewState(reviewState);
 
       context.trigger("pr:review", {

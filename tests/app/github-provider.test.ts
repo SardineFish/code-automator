@@ -14,9 +14,14 @@ import {
   reviewCommentPayload,
   reviewPayload
 } from "../fixtures/github-webhooks.js";
-import { createNoOpLogSink } from "../fixtures/log-sink.js";
+import {
+  createMemoryLogSink,
+  createNoOpLogSink,
+  type CapturedLogRecord
+} from "../fixtures/log-sink.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
 import type { AppConfig } from "../../src/types/config.js";
+import type { LogSink } from "../../src/types/logging.js";
 import type { ActiveWorkflowRunRecord, WorkflowRunArtifacts } from "../../src/types/tracking.js";
 
 function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
@@ -232,6 +237,57 @@ test("GitHub provider preserves multi-line PR mention content", async (t) => {
   assert.deepEqual(started, ["codex exec 'At PR 8: review this\nwith more context'"]);
 });
 
+test("GitHub provider ignores approved PR reviews by default", async (t) => {
+  const logRecords: CapturedLogRecord[] = [];
+  const { commands, reactionCalls, started, url } = await startGitHubApp(t, {
+    logSink: createMemoryLogSink(logRecords)
+  });
+  const response = await signedRequest(url, reviewPayload("ship it", "approved"), "pull_request_review");
+
+  assert.equal(response.status, 202);
+  assert.deepEqual(commands, []);
+  assert.deepEqual(started, []);
+  assert.deepEqual(reactionCalls, []);
+  assert.ok(
+    logRecords.some(
+      (record) =>
+        record.message === "processed webhook delivery" &&
+        record.status === "ignored" &&
+        record.reason === "approved_review_ignored"
+    )
+  );
+});
+
+test("GitHub provider routes approved PR reviews when ignoreApprovalReview is false", async (t) => {
+  const { commands, reactionCalls, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      if (!config.gh) {
+        throw new Error("Missing test GitHub config.");
+      }
+
+      config.gh.ignoreApprovalReview = false;
+    }
+  });
+  const response = await signedRequest(url, reviewPayload("ship it", "approved"), "pull_request_review");
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Review PR 8: ship it'"]);
+  assert.deepEqual(started, ["codex exec 'Review PR 8: ship it'"]);
+  assert.deepEqual(reactionCalls, []);
+});
+
+test("GitHub provider keeps changes-requested reviews actionable", async (t) => {
+  const { commands, reactionCalls, started, url } = await startGitHubApp(t);
+  const response = await signedRequest(url, reviewPayload("", "changes_requested"), "pull_request_review");
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Review PR 8: request-changes'"]);
+  assert.deepEqual(started, ["codex exec 'Review PR 8: request-changes'"]);
+  assert.deepEqual(reactionCalls, []);
+});
+
 test("GitHub provider routes the documented workflows through the provider app", async (t) => {
   const { commands, commentCalls, envs, reactionCalls, started, url } = await startGitHubApp(t);
   const scenarios = [
@@ -327,6 +383,7 @@ async function startGitHubApp(
   options?: {
     createQueuedRunError?: Error;
     customizeConfig?: (config: AppConfig) => void;
+    logSink?: LogSink;
   }
 ) {
   const config = {
@@ -349,7 +406,7 @@ async function startGitHubApp(
   const reactionCalls: string[] = [];
   const started: string[] = [];
   let runCount = 0;
-  const logSink = createNoOpLogSink();
+  const logSink = options?.logSink ?? createNoOpLogSink();
   const originalFetch = global.fetch;
 
   global.fetch = async (input, init) => {

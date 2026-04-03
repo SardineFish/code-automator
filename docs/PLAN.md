@@ -126,6 +126,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Wrap the handler request-to-submit path with one `try/catch` so JavaScript runtime errors can report the message plus stack trace before returning `500`.
 - Add regression coverage for issue-thread and PR-thread failure reporting while preserving the existing matched-run reaction behavior on success.
 
+### Plan 19: Ignore approved GitHub PR reviews by default [done]
+
+- Add provider-owned `gh.ignoreApprovalReview` config with a default value of `true`.
+- Keep approved `pull_request_review` events provider-owned by ignoring them in the GitHub handler when the option is enabled, while preserving `changes_requested`, review comments, and PR issue comments.
+- Update regression coverage, fixtures, and operator docs so approved reviews are no longer documented as actionable by default.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

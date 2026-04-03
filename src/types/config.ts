@@ -32,6 +32,7 @@ export interface GitHubProviderConfig {
   appId: number;
   botHandle: string;
   requireMention?: boolean;
+  ignoreApprovalReview?: boolean;
   whitelist: WhitelistConfig;
   redelivery?: false | GitHubRedeliveryConfig;
 }
