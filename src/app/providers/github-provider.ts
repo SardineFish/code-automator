@@ -87,7 +87,7 @@ export async function githubProvider(
   if (!payload) {
     return;
   }
- 
+
   // Apply generic provider gates before deciding which workflow triggers to emit.
   const gate = readGate(payload);
   const requestLog = context.log.child({ eventName, actorLogin: gate?.actorLogin, repo: gate?.repoFullName });

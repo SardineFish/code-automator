@@ -16,6 +16,12 @@ export interface IssueMentionParseResult {
   content: string;
 }
 
+export interface GitHubReaction {
+  content: string;
+  userLogin?: string;
+  userType?: string;
+}
+
 export function asObject(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return null;
@@ -160,28 +166,9 @@ export async function addCommentReaction(options: {
   token: string;
   kind: "issue" | "issue_comment" | "pull_request_review_comment";
 }): Promise<void> {
-  const [owner, repo] = options.repoFullName.split("/");
-
-  if (!owner || !repo) {
-    throw new Error(`Invalid repository name '${options.repoFullName}'.`);
-  }
-
-  const endpoint =
-    options.kind === "issue"
-      ? `https://api.github.com/repos/${owner}/${repo}/issues/${options.subjectId}/reactions`
-      : options.kind === "issue_comment"
-        ? `https://api.github.com/repos/${owner}/${repo}/issues/comments/${options.subjectId}/reactions`
-        : `https://api.github.com/repos/${owner}/${repo}/pulls/comments/${options.subjectId}/reactions`;
-
-  const response = await fetch(endpoint, {
+  const response = await fetch(getReactionEndpoint(options.repoFullName, options.subjectId, options.kind), {
     method: "POST",
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${options.token}`,
-      "Content-Type": "application/json",
-      "User-Agent": "github-agent-orchestrator",
-      "X-GitHub-Api-Version": "2022-11-28"
-    },
+    headers: createGitHubApiHeaders(options.token, { "Content-Type": "application/json" }),
     body: JSON.stringify({ content: options.reaction })
   });
 
@@ -193,6 +180,51 @@ export async function addCommentReaction(options: {
   throw new Error(`GitHub reaction request failed: ${response.status} ${body}`);
 }
 
+export async function listCommentReactions(options: {
+  repoFullName: string;
+  subjectId: number;
+  token: string;
+  kind: "issue" | "issue_comment" | "pull_request_review_comment";
+}): Promise<GitHubReaction[]> {
+  const response = await fetch(`${getReactionEndpoint(options.repoFullName, options.subjectId, options.kind)}?per_page=100`, {
+    headers: createGitHubApiHeaders(options.token)
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`GitHub reaction list request failed: ${response.status} ${body}`);
+  }
+
+  const payload = (await response.json()) as unknown;
+
+  if (!Array.isArray(payload)) {
+    throw new Error("GitHub reaction list response did not return an array.");
+  }
+
+  return payload.flatMap((value) => {
+    const reaction = asObject(value);
+
+    if (!reaction) {
+      return [];
+    }
+
+    const content = readString(reaction, "content");
+
+    if (!content) {
+      return [];
+    }
+
+    const user = readObject(reaction, "user");
+    return [
+      {
+        content,
+        userLogin: readString(user ?? {}, "login"),
+        userType: readString(user ?? {}, "type")
+      }
+    ];
+  });
+}
+
 export async function addThreadComment(options: {
   repoFullName: string;
   subjectId: number;
@@ -200,21 +232,11 @@ export async function addThreadComment(options: {
   token: string;
   kind: "issue" | "pull_request";
 }): Promise<void> {
-  const [owner, repo] = options.repoFullName.split("/");
-
-  if (!owner || !repo) {
-    throw new Error(`Invalid repository name '${options.repoFullName}'.`);
-  }
+  const [owner, repo] = splitRepoFullName(options.repoFullName);
 
   const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${options.subjectId}/comments`, {
     method: "POST",
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${options.token}`,
-      "Content-Type": "application/json",
-      "User-Agent": "github-agent-orchestrator",
-      "X-GitHub-Api-Version": "2022-11-28"
-    },
+    headers: createGitHubApiHeaders(options.token, { "Content-Type": "application/json" }),
     body: JSON.stringify({ body: options.body })
   });
 
@@ -224,6 +246,35 @@ export async function addThreadComment(options: {
 
   const body = await response.text();
   throw new Error(`GitHub ${options.kind} comment request failed: ${response.status} ${body}`);
+}
+
+export async function readGitHubThreadState(options: {
+  repoFullName: string;
+  subjectId: number;
+  token: string;
+  kind: "issue" | "pull_request";
+}): Promise<string | undefined> {
+  const [owner, repo] = splitRepoFullName(options.repoFullName);
+  const endpoint =
+    options.kind === "issue"
+      ? `https://api.github.com/repos/${owner}/${repo}/issues/${options.subjectId}`
+      : `https://api.github.com/repos/${owner}/${repo}/pulls/${options.subjectId}`;
+  const response = await fetch(endpoint, {
+    headers: createGitHubApiHeaders(options.token)
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`GitHub ${options.kind} state request failed: ${response.status} ${body}`);
+  }
+
+  const payload = asObject((await response.json()) as unknown);
+
+  if (!payload) {
+    throw new Error(`GitHub ${options.kind} state response did not return an object.`);
+  }
+
+  return readString(payload, "state");
 }
 
 export interface InstallationTokenProvider {
@@ -300,12 +351,7 @@ export const fetchGitHubInstallationTokenClient: GitHubInstallationTokenClient =
       `https://api.github.com/app/installations/${installationId}/access_tokens`,
       {
         method: "POST",
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${jwt}`,
-          "User-Agent": "github-agent-orchestrator",
-          "X-GitHub-Api-Version": "2022-11-28"
-        }
+        headers: createGitHubApiHeaders(jwt)
       }
     );
 
@@ -323,6 +369,19 @@ export const fetchGitHubInstallationTokenClient: GitHubInstallationTokenClient =
     return { token: payload.token, expiresAt: payload.expires_at };
   }
 };
+
+function createGitHubApiHeaders(
+  token: string,
+  extraHeaders?: Record<string, string>
+): Record<string, string> {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "User-Agent": "github-agent-orchestrator",
+    "X-GitHub-Api-Version": "2022-11-28",
+    ...extraHeaders
+  };
+}
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -355,4 +414,28 @@ function readSupportedSlashCommand(value: string | undefined): string | undefine
 
   const commandName = commandMatch[1].toLowerCase();
   return SUPPORTED_COMMANDS.has(commandName) ? commandName : undefined;
+}
+
+function getReactionEndpoint(
+  repoFullName: string,
+  subjectId: number,
+  kind: "issue" | "issue_comment" | "pull_request_review_comment"
+): string {
+  const [owner, repo] = splitRepoFullName(repoFullName);
+
+  return kind === "issue"
+    ? `https://api.github.com/repos/${owner}/${repo}/issues/${subjectId}/reactions`
+    : kind === "issue_comment"
+      ? `https://api.github.com/repos/${owner}/${repo}/issues/comments/${subjectId}/reactions`
+      : `https://api.github.com/repos/${owner}/${repo}/pulls/comments/${subjectId}/reactions`;
+}
+
+function splitRepoFullName(repoFullName: string): [string, string] {
+  const [owner, repo] = repoFullName.split("/");
+
+  if (!owner || !repo) {
+    throw new Error(`Invalid repository name '${repoFullName}'.`);
+  }
+
+  return [owner, repo];
 }

@@ -9,17 +9,41 @@ export interface GitHubAppWebhookDelivery {
   statusCode?: number;
 }
 
+export interface GitHubAppWebhookDeliveryDetail extends GitHubAppWebhookDelivery {
+  eventName: string;
+  payload: Record<string, unknown>;
+}
+
 export interface GitHubAppWebhookDeliveryPage {
   deliveries: GitHubAppWebhookDelivery[];
   nextPageUrl?: string;
 }
 
 export interface GitHubAppWebhookDeliveryClient {
+  getDelivery(jwt: string, deliveryId: number): Promise<GitHubAppWebhookDeliveryDetail>;
   listDeliveries(jwt: string, pageUrl?: string): Promise<GitHubAppWebhookDeliveryPage>;
   redeliverDelivery(jwt: string, deliveryId: number): Promise<void>;
 }
 
 export const fetchGitHubAppWebhookDeliveryClient: GitHubAppWebhookDeliveryClient = {
+  async getDelivery(jwt, deliveryId) {
+    const response = await fetch(`https://api.github.com/app/hook/deliveries/${deliveryId}`, {
+      headers: createGitHubAppHeaders(jwt)
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`GitHub webhook delivery detail request failed: ${response.status} ${body}`);
+    }
+
+    const payload = normalizeDeliveryDetail((await response.json()) as unknown);
+
+    if (!payload) {
+      throw new Error("GitHub webhook delivery detail response was missing required fields.");
+    }
+
+    return payload;
+  },
   async listDeliveries(jwt, pageUrl) {
     const response = await fetch(pageUrl ?? "https://api.github.com/app/hook/deliveries?per_page=100", {
       headers: createGitHubAppHeaders(jwt)
@@ -81,6 +105,24 @@ function normalizeDelivery(value: unknown): GitHubAppWebhookDelivery | null {
     redelivery: typeof delivery.redelivery === "boolean" ? delivery.redelivery : false,
     status: readString(delivery, "status") ?? "",
     statusCode: readInteger(delivery, "status_code")
+  };
+}
+
+function normalizeDeliveryDetail(value: unknown): GitHubAppWebhookDeliveryDetail | null {
+  const delivery = asObject(value);
+  const summary = delivery ? normalizeDelivery(delivery) : null;
+  const request = delivery ? asObject(delivery.request) : null;
+  const payload = request ? asObject(request.payload) : null;
+  const eventName = delivery ? readString(delivery, "event") : undefined;
+
+  if (!summary || !payload || !eventName) {
+    return null;
+  }
+
+  return {
+    ...summary,
+    eventName,
+    payload
   };
 }
 
