@@ -33,7 +33,21 @@ export function issueOpenedPayload() {
   };
 }
 
-export function issueCommentPayload(body: string, options?: { pullRequest?: boolean; senderLogin?: string }) {
+export function issueClosedPayload() {
+  return {
+    ...issueOpenedPayload(),
+    action: "closed",
+    issue: {
+      ...issueOpenedPayload().issue,
+      state: "closed"
+    }
+  };
+}
+
+export function issueCommentPayload(
+  body: string,
+  options?: { pullRequest?: boolean; senderLogin?: string; issueState?: "open" | "closed" }
+) {
   return {
     action: "created",
     repository: baseRepository,
@@ -43,7 +57,7 @@ export function issueCommentPayload(body: string, options?: { pullRequest?: bool
       number: 7,
       title: "Fix failing check",
       body: "Need a plan",
-      state: "open",
+      state: options?.issueState ?? "open",
       html_url: "https://github.com/acme/demo/issues/7",
       user: { login: "octocat" },
       ...(options?.pullRequest ? { pull_request: { url: "https://api.github.com/repos/acme/demo/pulls/7" } } : {})

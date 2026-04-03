@@ -1,6 +1,5 @@
 import type { WorkspaceRepo } from "../../repo/workspace/workspace-repo.js";
 import type { ProcessRunner } from "../../providers/process/process-runner.js";
-import { clipLogPreview } from "../logging/log-preview.js";
 import type { LogSink } from "../../types/logging.js";
 import type { ServiceConfig } from "../../types/config.js";
 import type {
@@ -9,8 +8,9 @@ import type {
   SubmittedTrigger
 } from "../../types/runtime.js";
 import type { WorkflowTracker } from "../tracking/workflow-tracker.js";
-import { executeWorkflow, prepareWorkspace } from "../execution/execute-workflow.js";
+import { renderExecutorWorkspaceKey } from "../execution/render-workspace-key.js";
 import { extractTriggerLogContext, extractWorkflowRunContext } from "./trigger-log-context.js";
+import { launchQueuedWorkflowRuns } from "./launch-queued-workflow-runs.js";
 import { renderWorkflowPrompt } from "../template/render-workflow-template.js";
 import { selectWorkflow } from "../workflow/select-workflow.js";
 
@@ -78,7 +78,13 @@ export async function processTriggerSubmission(
     message: "selected workflow",
     triggers: options.triggers.map((trigger) => trigger.name)
   });
-  const queuedRun = await options.workflowTracker.createQueuedRun(
+  const prompt = renderWorkflowPrompt(selected.workflow.prompt, { in: matchedTrigger.input });
+  const workspaceKey = renderExecutorWorkspaceKey(
+    options.config,
+    selected.workflow.use,
+    matchedTrigger.input
+  );
+  const queued = await options.workflowTracker.createQueuedRun(
     {
       source: options.source,
       ...extractWorkflowRunContext(matchedTrigger.input),
@@ -86,11 +92,20 @@ export async function processTriggerSubmission(
       matchedTrigger: selected.matchedTrigger,
       executorName: selected.workflow.use
     },
-    ""
+    {
+      workspacePath: "",
+      workspaceKey,
+      launch: {
+        prompt,
+        triggerEnv: matchedTrigger.env
+      }
+    }
   );
+  const queuedRun = queued.record;
   const runLog = workflowLog?.child({ runId: queuedRun.runId });
   runLog?.info({
-    message: "queued workflow run"
+    message: "queued workflow run",
+    workspaceKey
   });
   const terminalListeners = options.terminalListeners;
   if (terminalListeners && hasTerminalListeners(terminalListeners)) {
@@ -98,15 +113,19 @@ export async function processTriggerSubmission(
   }
 
   try {
-    const prompt = renderWorkflowPrompt(selected.workflow.prompt, { in: matchedTrigger.input });
-    void continueWorkflowLaunch(
-      options,
-      runLog,
-      selected.workflow.use,
-      prompt,
-      matchedTrigger.env,
-      queuedRun
-    );
+    if (queued.shouldLaunchNow) {
+      launchQueuedWorkflowRuns(
+        {
+          config: options.config,
+          processRunner: options.processRunner,
+          workspaceRepo: options.workspaceRepo,
+          workflowTracker: options.workflowTracker,
+          logSink: runLog,
+          baseEnv: options.baseEnv
+        },
+        [queuedRun]
+      );
+    }
 
     return {
       status: "matched",
@@ -135,89 +154,6 @@ export async function processTriggerSubmission(
       executorName: selected.workflow.use,
       errorMessage: error instanceof Error ? error.message : "Unknown orchestration error."
     };
-  }
-}
-
-async function continueWorkflowLaunch(
-  options: ProcessTriggerSubmissionOptions,
-  logSink: LogSink | undefined,
-  executorName: string,
-  prompt: string,
-  triggerEnv: Record<string, string>,
-  queuedRun: Awaited<ReturnType<WorkflowTracker["createQueuedRun"]>>
-): Promise<void> {
-  let execution:
-    | {
-        pid: number;
-        command: string;
-        startedAt: string;
-        workspacePath: string;
-      }
-    | undefined;
-
-  try {
-    const workspacePath = await prepareWorkspace({
-      config: options.config,
-      executorName,
-      prompt,
-      artifacts: queuedRun.artifacts,
-      triggerEnv,
-      workspaceRepo: options.workspaceRepo,
-      processRunner: options.processRunner,
-      baseEnv: options.baseEnv
-    });
-    await options.workflowTracker.updateQueuedRun(queuedRun.runId, { workspacePath });
-    execution = await executeWorkflow({
-      config: options.config,
-      executorName,
-      prompt,
-      artifacts: queuedRun.artifacts,
-      triggerEnv,
-      workspacePath,
-      workspaceRepo: options.workspaceRepo,
-      processRunner: options.processRunner,
-      baseEnv: options.baseEnv
-    });
-
-    await options.workflowTracker.markRunning(queuedRun.runId, {
-      pid: execution.pid,
-      command: execution.command,
-      startedAt: execution.startedAt,
-      workspacePath: execution.workspacePath
-    });
-    logSink?.info({
-      message: "workflow launch started",
-      pid: execution.pid,
-      workspacePath: execution.workspacePath
-    });
-    if (logSink?.isLevelEnabled("debug")) {
-      logSink.debug({
-        message: "workflow launch command",
-        commandPreview: clipLogPreview(execution.command)
-      });
-    }
-  } catch (error) {
-    if (execution) {
-      logSink?.error({
-        message: "workflow launch state persistence failed after process start",
-        pid: execution.pid,
-        errorMessage: error instanceof Error ? error.message : "Unknown workflow launch error."
-      });
-      return;
-    }
-
-    logSink?.error({
-      message: "workflow launch failed",
-      errorMessage: error instanceof Error ? error.message : "Unknown workflow launch error."
-    });
-
-    try {
-      await options.workflowTracker.markTerminal(queuedRun.runId, "error", {
-        errorMessage: error instanceof Error ? error.message : "Unknown workflow launch error."
-      });
-    } catch {
-      return;
-    }
   }
 }
 

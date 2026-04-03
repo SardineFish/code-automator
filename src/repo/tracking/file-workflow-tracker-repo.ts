@@ -5,8 +5,9 @@ import type { TrackingConfig } from "../../types/config.js";
 import type { WorkflowRunArtifacts, WorkflowTrackerState } from "../../types/tracking.js";
 
 const EMPTY_STATE: WorkflowTrackerState = {
-  version: 1,
-  activeRuns: {}
+  version: 2,
+  activeRuns: {},
+  keyedWorkspaces: {}
 };
 
 export interface WorkflowTrackerRepo {
@@ -35,10 +36,14 @@ export const fileWorkflowTrackerRepo: WorkflowTrackerRepo = {
   async loadState(config) {
     try {
       const contents = await readFile(config.stateFile, "utf8");
-      return JSON.parse(contents) as WorkflowTrackerState;
+      return normalizeTrackerState(JSON.parse(contents) as Partial<WorkflowTrackerState>);
     } catch (error) {
       if (isErrnoException(error, "ENOENT")) {
-        return { ...EMPTY_STATE, activeRuns: {} };
+        return {
+          ...EMPTY_STATE,
+          activeRuns: {},
+          keyedWorkspaces: {}
+        };
       }
 
       throw error;
@@ -70,6 +75,24 @@ export const fileWorkflowTrackerRepo: WorkflowTrackerRepo = {
 function getArtifactsDir(stateFile: string): string {
   const parsed = path.parse(stateFile);
   return path.join(parsed.dir, `${parsed.name}.runs`);
+}
+
+function normalizeTrackerState(
+  state: Partial<WorkflowTrackerState> | { version?: number; activeRuns?: WorkflowTrackerState["activeRuns"] }
+): WorkflowTrackerState {
+  if (state.version === 2) {
+    return {
+      version: 2,
+      activeRuns: state.activeRuns ?? {},
+      keyedWorkspaces: "keyedWorkspaces" in state ? state.keyedWorkspaces ?? {} : {}
+    };
+  }
+
+  return {
+    version: 2,
+    activeRuns: state.activeRuns ?? {},
+    keyedWorkspaces: {}
+  };
 }
 
 function isErrnoException(error: unknown, code: string): boolean {

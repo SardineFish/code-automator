@@ -29,9 +29,10 @@ export async function readPid(pidFilePath: string): Promise<number | undefined> 
 export async function cleanupWorkspace(
   workspaceRepo: WorkspaceRepo,
   workspace: WorkspaceConfig,
-  workspacePath: string
+  workspacePath: string,
+  workspaceKey?: string
 ): Promise<void> {
-  if (!workspace.cleanupAfterRun || workspacePath === "") {
+  if (!workspace.cleanupAfterRun || workspacePath === "" || workspaceKey !== undefined) {
     return;
   }
 

@@ -4,6 +4,7 @@ import { type Document, isMap } from "yaml";
 import type {
   AppConfig,
   ExecutorConfig,
+  ExecutorWorkspaceOptions,
   LoggingConfig,
   ServerConfig,
   TrackingConfig,
@@ -127,10 +128,7 @@ function readExecutors(root: ReturnType<typeof expectMap>): Record<string, Execu
     const definition = expectMap(item.value, executorPath);
     const run = readString(readRequiredNode(definition, "run", `${executorPath}.run`), `${executorPath}.run`);
     const env = readOptionalEnvMap(definition.get("env", true), `${executorPath}.env`);
-    const workspace = readOptionalBooleanOrString(
-      definition.get("workspace", true),
-      `${executorPath}.workspace`
-    );
+    const workspace = readOptionalExecutorWorkspace(definition.get("workspace", true), `${executorPath}.workspace`);
     const timeoutMs = readOptionalInteger(
       definition.get("timeoutMs", true),
       `${executorPath}.timeoutMs`
@@ -213,3 +211,38 @@ const CORE_TOP_LEVEL_KEYS = new Set([
   "executors",
   "workflow"
 ]);
+
+function readOptionalExecutorWorkspace(
+  node: unknown,
+  path: string
+): ExecutorConfig["workspace"] | undefined {
+  if (!node) {
+    return undefined;
+  }
+
+  if (!isMap(node)) {
+    return readOptionalBooleanOrString(node, path);
+  }
+
+  const workspace = expectMap(node, path);
+  const baseDirNode = workspace.get("baseDir", true);
+  const keyNode = workspace.get("key", true);
+  const result: ExecutorWorkspaceOptions = {};
+
+  if (baseDirNode) {
+    result.baseDir = readString(baseDirNode, `${path}.baseDir`);
+  }
+
+  if (keyNode) {
+    result.key = readString(keyNode, `${path}.key`);
+  }
+
+  if (result.baseDir === undefined && result.key === undefined) {
+    throw new ConfigError(
+      path,
+      "Expected a boolean, non-empty string, or mapping with at least one of 'baseDir' or 'key'."
+    );
+  }
+
+  return result;
+}

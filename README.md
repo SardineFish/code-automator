@@ -95,6 +95,37 @@ workflow:
 
 Relative `tracking` paths resolve from the YAML file location. The config loader preserves additional top-level provider sections, but the shipped startup wiring currently registers only `gh`.
 
+## Reusable Issue Sessions
+
+Use a keyed workspace when one issue should keep the same checkout and Codex thread across multiple runs.
+
+```yaml
+executors:
+  codex:
+    run: node ./scripts/codex-reuse.js ${prompt}
+    workspace:
+      baseDir: /var/lib/coding-automator/issues
+      key: ${in.repo}#${in.issueId}
+  codex-reset:
+    run: node ./scripts/reset-session.js ${workspace}
+    workspace:
+      baseDir: /var/lib/coding-automator/issues
+      key: ${in.repo}#${in.issueId}
+workflow:
+  issue-reset:
+    on:
+      - issue:command:reset
+    use: codex-reset
+    prompt: Reset the reusable issue session for ${in.repo}#${in.issueId}.
+  issue-close:
+    on:
+      - issue:close
+    use: codex-reset
+    prompt: Clean up the reusable issue session for ${in.repo}#${in.issueId}.
+```
+
+The reusable workspace directory name is derived directly from the rendered key after path-safe escaping, for example `acme/demo#7` becomes `acme_demo#7`.
+
 ## Event Providers
 
 - The current production provider is the GitHub App provider configured under `gh`.
@@ -107,8 +138,11 @@ Relative `tracking` paths resolve from the YAML file location. The config loader
 
 - Opening an issue or commenting `@<bot-handle> /plan` triggers the planning workflow.
 - Commenting `@<bot-handle> /approve` triggers the implementation workflow.
+- Commenting `@<bot-handle> /reset` can trigger a reset workflow while the issue is still open.
+- Closing an issue emits `issue:close`, which is the intended cleanup path for keyed reusable workspaces.
 - `issue:at` and `pr:at` fire whenever `@<bot-handle>` appears anywhere in an issue or PR comment body.
 - When `gh.requireMention` is `false`, issue comments may match `issue:comment` without a mention, and `/plan` or `/approve` on issues no longer need a leading mention.
+- Closed issues no longer dispatch normal issue-comment or slash-command workflows.
 - `gh.ignoreApprovalReview` is optional and defaults to `true`. When enabled, approved `pull_request_review` events are acknowledged but do not trigger `pr:review`; set it to `false` to keep routing approve-review bodies.
 - Workflow matching is first-match-wins, so put command-specific workflows before mention or generic comment workflows.
 
@@ -129,23 +163,29 @@ The redelivery worker stores its checkpoint next to the tracked run artifacts un
 ## Configuration Notes
 
 - Workflow prompts may use `${in.*}` variables.
-- Executor commands may use `${prompt}` and `${workspace}`.
+- Executor commands may use `${prompt}`, `${workspace}`, and `${workspaceKey}`.
 - `executors.<name>.workspace` is optional:
   - omit it to inherit `workspace.enabled` and `workspace.baseDir`
   - set `false` to disable workspace allocation for that executor
   - set `true` to force workspace allocation with `workspace.baseDir`
   - set a string to force workspace allocation and use that string as the parent workspace directory
-- `${prompt}` and `${workspace}` are shell-escaped before command execution.
+  - set a mapping with `baseDir` and/or `key` to configure reusable keyed workspaces
+- `executors.<name>.workspace.key` renders from workflow input such as `${in.repo}#${in.issueId}`.
+- Runs that render the same `workspace.key` are serialized across executors and reuse one stable workspace directory.
+- `${prompt}`, `${workspace}`, and `${workspaceKey}` are shell-escaped before command execution.
 - The current GitHub provider keeps `in` intentionally small. It emits `event`, `user`, `repo`, and when relevant `issueId`, `content`, and `command`.
 - The executor launch environment is merged as `base process env -> executor env -> trigger env`.
 - The shipped GitHub provider injects `GH_TOKEN` for matched runs so your agent can call GitHub as the app installation.
 - When the selected executor resolves to no workspace allocation, `${workspace}` resolves to an empty string.
+- When the selected executor has no `workspace.key`, `${workspaceKey}` resolves to an empty string.
 
 ## Operations
 
 - Runs are launched as detached background processes.
 - `tracking.stateFile` stores non-terminal runs, and `tracking.logFile` stores append-only terminal outcomes.
 - Per-run wrapper, PID, result, stdout, and stderr files are stored next to the state file under a derived run-artifacts directory.
+- Keyed queued runs persist enough launch state to survive restart, and the next queued keyed run is released when the current owner reaches a terminal state.
+- `workspace.cleanupAfterRun` only removes ephemeral per-run workspaces. Reusable keyed workspaces are removed by reset or close workflows.
 - Press `Ctrl-C` once to stop accepting new HTTP requests, stop future GitHub redelivery scans, and wait for tracked `queued` or `running` workflows to drain before exiting `0`. Press `Ctrl-C` again to exit immediately.
 - If `gh.redelivery` is enabled, a second background worker scans recent GitHub App deliveries and requests redelivery for unresolved failures.
 - `logging.level: debug` adds inbound request metadata and clipped executor command and stdout previews to runtime logs.

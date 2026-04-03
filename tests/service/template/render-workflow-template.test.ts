@@ -53,17 +53,18 @@ test("renderWorkflowPrompt rejects missing path segments", () => {
 });
 
 test("renderExecutorCommand resolves prompt and workspace variables", () => {
-  const command = renderExecutorCommand("codex -w ${workspace} exec ${prompt}", {
+  const command = renderExecutorCommand("codex -w ${workspace} --key ${workspaceKey} exec ${prompt}", {
     prompt: "Analyze issue",
-    workspace: "/tmp/workspace-1"
+    workspace: "/tmp/workspace-1",
+    workspaceKey: "acme/demo#7"
   });
 
-  assert.equal(command, "codex -w /tmp/workspace-1 exec Analyze issue");
+  assert.equal(command, "codex -w /tmp/workspace-1 --key acme/demo#7 exec Analyze issue");
 });
 
 test("renderExecutorCommand rejects unsupported roots", () => {
   assert.throws(
-    () => renderExecutorCommand("echo ${in.issueId}", { prompt: "x", workspace: "" }),
+    () => renderExecutorCommand("echo ${in.issueId}", { prompt: "x", workspace: "", workspaceKey: "" }),
     {
       name: "TemplateRenderError",
       message: /Unsupported root 'in'/

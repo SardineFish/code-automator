@@ -5,6 +5,7 @@ import { shellProcessRunner } from "../providers/process/process-runner.js";
 import { fileWorkflowTrackerRepo } from "../repo/tracking/file-workflow-tracker-repo.js";
 import { defaultWorkspaceRepo } from "../repo/workspace/workspace-repo.js";
 import { createFileWorkflowTracker } from "../service/tracking/file-workflow-tracker.js";
+import { launchQueuedWorkflowRuns } from "../service/orchestration/launch-queued-workflow-runs.js";
 import type { WorkspaceRepo } from "../repo/workspace/workspace-repo.js";
 import type { WorkflowTracker } from "../service/tracking/workflow-tracker.js";
 import type { ServiceConfig } from "../types/config.js";
@@ -54,10 +55,9 @@ export async function initializeWorkflowTracking(
   options: AppRuntimeOptions
 ): Promise<void> {
   await options.workflowTracker.initialize();
-  await options.workflowTracker.reconcileActiveRuns(
-    options.processRunner,
-    options.workspaceRepo,
-    config.workspace
+  await reconcileWorkflowTracking(
+    config,
+    options
   );
 
   if (options.reconcileIntervalMs < 1) {
@@ -65,8 +65,7 @@ export async function initializeWorkflowTracking(
   }
 
   const reconcileTimer = setInterval(() => {
-    void options.workflowTracker
-      .reconcileActiveRuns(options.processRunner, options.workspaceRepo, config.workspace)
+    void reconcileWorkflowTracking(config, options)
       .catch((error) => {
         options.logSink.error({
           message: "workflow reconciliation failed",
@@ -88,3 +87,25 @@ function resolveBaseEnv(baseEnv: NodeJS.ProcessEnv | undefined): NodeJS.ProcessE
 }
 
 export { resolveBaseEnv };
+
+async function reconcileWorkflowTracking(
+  config: ServiceConfig,
+  options: AppRuntimeOptions
+): Promise<void> {
+  const releasedRuns = await options.workflowTracker.reconcileActiveRuns(
+    options.processRunner,
+    options.workspaceRepo,
+    config.workspace
+  );
+  launchQueuedWorkflowRuns(
+    {
+      config,
+      processRunner: options.processRunner,
+      workspaceRepo: options.workspaceRepo,
+      workflowTracker: options.workflowTracker,
+      logSink: options.logSink.child({ source: "workflow-reconcile" }),
+      baseEnv: options.baseEnv
+    },
+    releasedRuns
+  );
+}

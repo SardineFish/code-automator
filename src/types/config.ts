@@ -12,7 +12,12 @@ export interface WorkspaceConfig {
   cleanupAfterRun: boolean;
 }
 
-export type ExecutorWorkspaceSetting = boolean | string;
+export interface ExecutorWorkspaceOptions {
+  baseDir?: string;
+  key?: string;
+}
+
+export type ExecutorWorkspaceSetting = boolean | string | ExecutorWorkspaceOptions;
 
 export interface TrackingConfig {
   stateFile: string;

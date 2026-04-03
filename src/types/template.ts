@@ -13,6 +13,7 @@ export interface WorkflowPromptTemplateVariables {
 export interface ExecutorTemplateVariables {
   prompt: string;
   workspace: string;
+  workspaceKey: string;
 }
 
 export type TemplateVariables = Record<string, unknown>;

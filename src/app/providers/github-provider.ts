@@ -34,9 +34,11 @@ import { resolveGitHubProviderConfig } from "./github-config.js";
  *
  * Supported canonical triggers:
  * - issue:open
+ * - issue:close
  *   Emitted for GitHub "issues" events when action === "opened".
  * - issue:command:plan
  * - issue:command:approve
+ * - issue:command:reset
  *   Emitted for GitHub "issue_comment" events on issues when the comment
  *   starts with a supported slash command after an optional leading mention.
  * - issue:at
@@ -191,7 +193,7 @@ export async function githubProvider(
 
   try {
     // Route the GitHub event to the smallest set of canonical workflow triggers.
-    if (eventName === "issues" && action === "opened") {
+    if (eventName === "issues" && (action === "opened" || action === "closed")) {
       const issueId = readId(issue);
       if (!issueId) {
         return respond(response, 202, "Accepted");
@@ -201,8 +203,10 @@ export async function githubProvider(
         reactionTarget = { subjectId, kind: "issue" };
       }
 
-      triggerWorkflow("issue:open", {
-        event: "issue:open",
+      const issueEvent = action === "closed" ? "issue:close" : "issue:open";
+
+      triggerWorkflow(issueEvent, {
+        event: issueEvent,
         user,
         repo,
         issueId,
@@ -241,6 +245,15 @@ export async function githubProvider(
           content
         });
       } else {
+        if (readString(issue ?? {}, "state") === "closed") {
+          requestLog.info({
+            message: "processed webhook delivery",
+            status: "ignored",
+            reason: "issue_closed"
+          });
+          return respond(response, 202, "Accepted");
+        }
+
         if (commentId !== undefined) {
           reactionTarget = { subjectId: commentId, kind: "issue_comment" };
         }

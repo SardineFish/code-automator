@@ -18,6 +18,11 @@ export interface WorkflowRunArtifacts {
   stderrPath: string;
 }
 
+export interface WorkflowRunLaunchData {
+  prompt: string;
+  triggerEnv: Record<string, string>;
+}
+
 export interface WorkflowRunContext {
   source?: string;
   deliveryId?: string;
@@ -39,6 +44,8 @@ export interface ActiveWorkflowRunRecord extends WorkflowRunContext {
   pid?: number;
   command?: string;
   workspacePath: string;
+  workspaceKey?: string;
+  launch?: WorkflowRunLaunchData;
   artifacts: WorkflowRunArtifacts;
   errorMessage?: string;
 }
@@ -53,12 +60,29 @@ export interface CompletedWorkflowRunRecord extends WorkflowRunContext {
   pid?: number;
   command?: string;
   workspacePath: string;
+  workspaceKey?: string;
   artifacts: WorkflowRunArtifacts;
   process?: ProcessRunResult;
   errorMessage?: string;
 }
 
+export interface KeyedWorkspaceQueueRecord {
+  activeRunId?: string;
+  pendingRunIds: string[];
+}
+
+export interface QueuedWorkflowRunTransition {
+  record: ActiveWorkflowRunRecord;
+  shouldLaunchNow: boolean;
+}
+
+export interface WorkflowTerminalTransition {
+  completed: CompletedWorkflowRunRecord | null;
+  releasedRuns: ActiveWorkflowRunRecord[];
+}
+
 export interface WorkflowTrackerState {
-  version: 1;
+  version: 2;
   activeRuns: Record<string, ActiveWorkflowRunRecord>;
+  keyedWorkspaces: Record<string, KeyedWorkspaceQueueRecord>;
 }
