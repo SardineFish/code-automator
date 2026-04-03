@@ -1,6 +1,6 @@
 import type { ProcessRunner } from "../../providers/process/process-runner.js";
 import type { WorkspaceRepo } from "../../repo/workspace/workspace-repo.js";
-import type { ServiceConfig } from "../../types/config.js";
+import type { ExecutorConfig, ServiceConfig } from "../../types/config.js";
 import type { WorkflowLaunchResult } from "../../types/execution.js";
 import type { WorkflowRunArtifacts } from "../../types/tracking.js";
 import { renderExecutorCommand } from "../template/render-workflow-template.js";
@@ -70,11 +70,13 @@ export async function executeWorkflow(options: ExecuteWorkflowOptions): Promise<
 }
 
 async function resolveWorkspace(options: ExecuteWorkflowOptions): Promise<string> {
-  if (!options.config.workspace.enabled) {
+  const workspace = resolveExecutorWorkspace(options.config, options.executorName);
+
+  if (!workspace.enabled) {
     return "";
   }
 
-  return options.workspaceRepo.createRunWorkspace(options.config.workspace.baseDir);
+  return options.workspaceRepo.createRunWorkspace(workspace.baseDir);
 }
 
 export async function prepareWorkspace(options: ExecuteWorkflowOptions): Promise<string> {
@@ -85,7 +87,7 @@ async function cleanupWorkspace(
   options: ExecuteWorkflowOptions,
   workspacePath: string
 ): Promise<Error | null> {
-  if (!options.config.workspace.enabled || !options.config.workspace.cleanupAfterRun || workspacePath === "") {
+  if (!options.config.workspace.cleanupAfterRun || workspacePath === "") {
     return null;
   }
 
@@ -97,4 +99,48 @@ async function cleanupWorkspace(
       `Workspace cleanup failed: ${error instanceof Error ? error.message : "Unknown cleanup error."}`
     );
   }
+}
+
+function resolveExecutorWorkspace(
+  config: ServiceConfig,
+  executorName: string
+): { enabled: boolean; baseDir: string } {
+  const executor = config.executors[executorName];
+
+  if (!executor) {
+    throw new Error("Unknown executor.");
+  }
+
+  return resolveExecutorWorkspaceSetting(config.workspace, executor);
+}
+
+function resolveExecutorWorkspaceSetting(
+  workspace: ServiceConfig["workspace"],
+  executor: ExecutorConfig
+): { enabled: boolean; baseDir: string } {
+  if (executor.workspace === undefined) {
+    return {
+      enabled: workspace.enabled,
+      baseDir: workspace.baseDir
+    };
+  }
+
+  if (executor.workspace === false) {
+    return {
+      enabled: false,
+      baseDir: workspace.baseDir
+    };
+  }
+
+  if (executor.workspace === true) {
+    return {
+      enabled: true,
+      baseDir: workspace.baseDir
+    };
+  }
+
+  return {
+    enabled: true,
+    baseDir: executor.workspace
+  };
 }

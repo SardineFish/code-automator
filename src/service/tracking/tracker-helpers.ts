@@ -31,7 +31,7 @@ export async function cleanupWorkspace(
   workspace: WorkspaceConfig,
   workspacePath: string
 ): Promise<void> {
-  if (!workspace.enabled || !workspace.cleanupAfterRun || workspacePath === "") {
+  if (!workspace.cleanupAfterRun || workspacePath === "") {
     return;
   }
 

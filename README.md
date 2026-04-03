@@ -71,6 +71,7 @@ gh:
 executors:
   codex:
     run: /path/to/codex exec ${prompt}
+    workspace: true
   claude:
     run: /path/to/claude ${prompt}
 workflow:
@@ -129,11 +130,16 @@ The redelivery worker stores its checkpoint next to the tracked run artifacts un
 
 - Workflow prompts may use `${in.*}` variables.
 - Executor commands may use `${prompt}` and `${workspace}`.
+- `executors.<name>.workspace` is optional:
+  - omit it to inherit `workspace.enabled` and `workspace.baseDir`
+  - set `false` to disable workspace allocation for that executor
+  - set `true` to force workspace allocation with `workspace.baseDir`
+  - set a string to force workspace allocation and use that string as the parent workspace directory
 - `${prompt}` and `${workspace}` are shell-escaped before command execution.
 - The current GitHub provider keeps `in` intentionally small. It emits `event`, `user`, `repo`, and when relevant `issueId`, `content`, and `command`.
 - The executor launch environment is merged as `base process env -> executor env -> trigger env`.
 - The shipped GitHub provider injects `GH_TOKEN` for matched runs so your agent can call GitHub as the app installation.
-- When `workspace.enabled` is `false`, `${workspace}` resolves to an empty string.
+- When the selected executor resolves to no workspace allocation, `${workspace}` resolves to an empty string.
 
 ## Operations
 

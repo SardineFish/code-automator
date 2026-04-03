@@ -39,11 +39,13 @@ chat-bot:
 executors:
   codex:
     run: /path/to/codex --yolo -w ${workspace} exec ${prompt}
+    workspace: true
     timeoutMs: 900000
     env:
       FOO: BAR
   claude:
     run: /path/to/claude --yolo ${prompt}
+    workspace: false
     timeoutMs: 900000
     env:
       FOO: BAR
@@ -79,6 +81,7 @@ workflow:
 - `tracking`: persistent workflow state and append-only results log paths. Relative paths resolve from the YAML config file directory.
 - `workspace`: workspace lifecycle policy for executor runs.
 - `executors`: named command templates plus static environment variables.
+- `executors.<name>.workspace`: optional workspace override. Use `true` to force allocation with `workspace.baseDir`, `false` to disable allocation, a string to override the parent workspace directory, or omit it to inherit `workspace.enabled`.
 - `executors.<name>.timeoutMs`: optional per-executor timeout in milliseconds.
 - `workflow`: ordered workflow definitions keyed by workflow name.
 - Any other top-level key is provider-owned configuration. The core app preserves those sections and registered providers validate them at startup.
@@ -111,7 +114,7 @@ workflow:
 - Workflow prompts may use `${in.*}` variables.
 - Executor commands may use `${prompt}` and `${workspace}`.
 - `${prompt}` is the rendered workflow prompt.
-- `${workspace}` is the per-run workspace path when workspace creation is enabled, otherwise an empty string.
+- `${workspace}` is the per-run workspace path when the selected executor resolves to workspace allocation, otherwise an empty string.
 - Executor `env` entries are added to the child process environment for that run.
 - Provider-supplied `trigger(..., { env })` values are added to the child process environment for the matched run.
 - Environment merge order is `base process env -> executor env -> trigger env`.
@@ -129,8 +132,14 @@ workflow:
 
 ## Workspace Rules
 
-- When `workspace.enabled` is `true`, the service creates a fresh subdirectory under `workspace.baseDir` for each execution.
-- When `workspace.enabled` is `false`, the service does not create a workspace automatically.
+- `workspace.enabled` remains the service-level default for whether executors allocate a workspace.
+- `executors.<name>.workspace` overrides that default per executor:
+  - omit it to inherit `workspace.enabled`
+  - set `false` to disable workspace allocation
+  - set `true` to allocate under `workspace.baseDir`
+  - set a string to allocate under that string path instead of `workspace.baseDir`
+- When workspace allocation is enabled for a run, the service creates a fresh subdirectory under the selected parent directory.
+- When workspace allocation is disabled for a run, the service does not create a workspace automatically.
 - When `workspace.cleanupAfterRun` is `true`, the run directory is removed when reconciliation observes that the detached run completed.
 - Command templates that reference `${workspace}` should be wrapped so they behave correctly when the value is empty.
 

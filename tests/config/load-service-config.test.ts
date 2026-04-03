@@ -81,6 +81,18 @@ test("parseServiceConfig accepts an explicit logging level", () => {
   assert.equal(parsed.logging.level, "debug");
 });
 
+test("parseServiceConfig accepts executor workspace overrides", () => {
+  const parsed = parseServiceConfig(
+    validConfig
+      .replace("    timeoutMs: 900000", "    timeoutMs: 900000\n    workspace: /tmp/codex-workspaces")
+      .replace("    run: claude run ${prompt}", "    run: claude run ${prompt}\n    workspace: false"),
+    "/tmp/configs/test.yml"
+  );
+
+  assert.equal(parsed.executors.codex.workspace, "/tmp/codex-workspaces");
+  assert.equal(parsed.executors.claude.workspace, false);
+});
+
 test("parseServiceConfig rejects unknown workflow executor", () => {
   const invalid = validConfig.replace("use: claude", "use: unknown");
   assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), {
@@ -144,6 +156,19 @@ test("parseServiceConfig requires positive executor timeouts", () => {
   assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
     assert.ok(error instanceof ConfigError);
     assert.match(error.message, /executors\.codex\.timeoutMs: Expected an integer greater than 0\./);
+    return true;
+  });
+});
+
+test("parseServiceConfig rejects invalid executor workspace values", () => {
+  const invalid = validConfig.replace("    run: claude run ${prompt}", "    run: claude run ${prompt}\n    workspace: 123");
+
+  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(
+      error.message,
+      /executors\.claude\.workspace: Expected a boolean or non-empty string\./
+    );
     return true;
   });
 });
