@@ -10,7 +10,7 @@ The runtime is event-provider extensible. Today the shipped provider is the GitH
 
 ## What You Need
 
-- Node.js 20 or newer
+- Node.js 22 or newer
 - A GitHub App installed on the repositories you want to automate
 - A public webhook URL that GitHub can reach
 - One or more coding agent CLIs available on the host, such as `codex` or `claude`
