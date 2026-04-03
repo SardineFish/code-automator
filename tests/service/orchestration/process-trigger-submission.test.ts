@@ -34,6 +34,8 @@ test("processTriggerSubmission launches the first matching workflow with matched
   const commands: string[] = [];
   const envValues: NodeJS.ProcessEnv[] = [];
   const running: string[] = [];
+  const subscribedRuns: string[] = [];
+  const subscribedListenerCounts: string[] = [];
   const result = await processTriggerSubmission({
     config: createServiceConfig(),
     source: "/gh-hook",
@@ -54,6 +56,7 @@ test("processTriggerSubmission launches the first matching workflow with matched
         throw new Error("should not be called");
       },
       async startDetached(command, options) {
+        assert.deepEqual(subscribedRuns, ["run-1"]);
         commands.push(command);
         envValues.push(options.env);
         return { pid: 4242, startedAt: "2026-04-02T00:00:00.000Z" };
@@ -76,6 +79,11 @@ test("processTriggerSubmission launches the first matching workflow with matched
       async createQueuedRun() {
         return createQueuedRunRecord("run-1");
       },
+      subscribeTerminalEvents(runId, listeners) {
+        subscribedRuns.push(runId);
+        subscribedListenerCounts.push(`${listeners.completed.length}:${listeners.error.length}`);
+        return () => undefined;
+      },
       async updateQueuedRun() {
         return {} as never;
       },
@@ -92,13 +100,18 @@ test("processTriggerSubmission launches the first matching workflow with matched
       async reconcileActiveRuns() {}
     },
     logSink: createNoOpLogSink(),
-    baseEnv: { BASE: "1" }
+    baseEnv: { BASE: "1" },
+    terminalListeners: {
+      completed: [() => undefined],
+      error: [() => undefined]
+    }
   });
 
   assert.equal(result.status, "matched");
   assert.equal(result.reason, "queued");
   assert.equal(result.workflowName, "issue-plan");
   assert.equal(result.matchedTrigger, "issue:command:plan");
+  assert.deepEqual(subscribedListenerCounts, ["1:1"]);
   await waitForCondition(() => running.length === 1);
   assert.deepEqual(commands, ["codex exec 'Plan issue 7'"]);
   assert.equal(envValues[0]?.BASE, "1");
@@ -135,6 +148,9 @@ test("processTriggerSubmission ignores empty trigger submissions", async () => {
     workflowTracker: {
       async initialize() {},
       async createQueuedRun() {
+        throw new Error("should not run");
+      },
+      subscribeTerminalEvents() {
         throw new Error("should not run");
       },
       async updateQueuedRun() {
@@ -203,6 +219,9 @@ test("processTriggerSubmission prepares an executor-specific workspace before la
       async initialize() {},
       async createQueuedRun() {
         return createQueuedRunRecord("run-2");
+      },
+      subscribeTerminalEvents() {
+        return () => undefined;
       },
       async updateQueuedRun(runId, details) {
         queuedUpdates.push(`${runId}:${details.workspacePath}`);

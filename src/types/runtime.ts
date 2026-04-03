@@ -15,6 +15,41 @@ export interface SelectedWorkflow {
 }
 
 export type OrchestrationStatus = "ignored" | "matched" | "failed";
+export type WorkflowTerminalErrorStatus = Exclude<WorkflowRunStatus, "queued" | "running" | "succeeded">;
+
+export interface WorkflowCompletedEventPayload {
+  runId: string;
+  workflowName: string;
+  matchedTrigger: TriggerKey;
+  executorName: string;
+  completedAt: string;
+  status: "succeeded";
+}
+
+export interface WorkflowErrorEventPayload {
+  runId: string;
+  workflowName: string;
+  matchedTrigger: TriggerKey;
+  executorName: string;
+  completedAt: string;
+  status: WorkflowTerminalErrorStatus;
+  error: Error;
+}
+
+export interface AppContextTerminalEventMap {
+  completed: WorkflowCompletedEventPayload;
+  error: WorkflowErrorEventPayload;
+}
+
+export type AppContextTerminalEventName = keyof AppContextTerminalEventMap;
+export type AppContextTerminalListener<T extends AppContextTerminalEventName> = (
+  event: AppContextTerminalEventMap[T]
+) => void | Promise<void>;
+
+export interface AppContextTerminalListeners {
+  completed: AppContextTerminalListener<"completed">[];
+  error: AppContextTerminalListener<"error">[];
+}
 
 export interface OrchestrationResult {
   status: OrchestrationStatus;
@@ -45,5 +80,9 @@ export interface AppContext {
   env: NodeJS.ProcessEnv;
   log: LogSink;
   trigger(name: TriggerKey, payload: TriggerSubmissionInput): void;
+  on<T extends AppContextTerminalEventName>(
+    eventName: T,
+    listener: AppContextTerminalListener<T>
+  ): () => void;
   submit(): Promise<OrchestrationResult>;
 }

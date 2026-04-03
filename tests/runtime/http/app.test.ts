@@ -154,6 +154,9 @@ function createRuntimeOptions() {
       async createQueuedRun() {
         throw new Error("should not run");
       },
+      subscribeTerminalEvents() {
+        return () => undefined;
+      },
       async updateQueuedRun() {
         throw new Error("should not run");
       },

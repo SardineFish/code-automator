@@ -4,6 +4,11 @@ import { getWhitelistRejectionReason } from "../../service/orchestration/check-w
 import { verifyWebhookSignature } from "../../service/security/verify-webhook-signature.js";
 import type { AppContext } from "../../types/runtime.js";
 import {
+  formatRuntimeErrorComment,
+  formatWorkflowTerminalErrorComment,
+  getReportTarget
+} from "./github-provider-reporting.js";
+import {
   addCommentReaction,
   addThreadComment,
   getHeader,
@@ -108,13 +113,41 @@ export async function githubProvider(
   const pullRequest = readObject(payload, "pull_request");
   const user = gate.actorLogin;
   const repo = gate.repoFullName;
-  const installationToken = await getInstallationTokenProvider(requireEnv(context.env, "GITHUB_APP_PRIVATE_KEY_PATH"))
-    .createInstallationToken(github.clientId, gate.installationId);
+  const privateKeyPath = requireEnv(context.env, "GITHUB_APP_PRIVATE_KEY_PATH");
+  const installationTokenProvider = getInstallationTokenProvider(privateKeyPath);
+  const installationToken = await installationTokenProvider.createInstallationToken(
+    github.clientId,
+    gate.installationId
+  );
   const triggerEnv = { GH_TOKEN: installationToken };
   const reportTarget = getReportTarget(eventName, issue, pullRequest);
   let reactionTarget:
     | { subjectId: number; kind: "issue" | "issue_comment" | "pull_request_review_comment" }
     | undefined;
+
+  if (reportTarget) {
+    context.on("error", async (event) => {
+      try {
+        const reportToken = await installationTokenProvider.createInstallationToken(
+          github.clientId,
+          gate.installationId
+        );
+        await addThreadComment({
+          repoFullName: repo,
+          subjectId: reportTarget.subjectId,
+          body: formatWorkflowTerminalErrorComment(event),
+          token: reportToken,
+          kind: reportTarget.kind
+        });
+      } catch (reportError) {
+        requestLog.warn({
+          message: "failed to post GitHub workflow terminal error comment",
+          runId: event.runId,
+          errorMessage: reportError instanceof Error ? reportError.message : "Unknown GitHub reporting error."
+        });
+      }
+    });
+  }
 
   try {
     // Route the GitHub event to the smallest set of canonical workflow triggers.
@@ -344,46 +377,4 @@ export async function githubProvider(
 
     respond(response, 500, "Internal Server Error");
   }
-}
-
-function getReportTarget(
-  eventName: string,
-  issue: Record<string, unknown> | null,
-  pullRequest: Record<string, unknown> | null
-): { subjectId: number; kind: "issue" | "pull_request" } | undefined {
-  if (eventName === "issues" || eventName === "issue_comment") {
-    const subjectId = readInteger(issue ?? {}, "number");
-    if (subjectId === undefined) {
-      return undefined;
-    }
-
-    return {
-      subjectId,
-      kind: readObject(issue ?? {}, "pull_request") ? "pull_request" : "issue"
-    };
-  }
-
-  if (eventName === "pull_request_review" || eventName === "pull_request_review_comment") {
-    const subjectId = readInteger(pullRequest ?? {}, "number");
-    if (subjectId === undefined) {
-      return undefined;
-    }
-
-    return { subjectId, kind: "pull_request" };
-  }
-
-  return undefined;
-}
-
-function formatRuntimeErrorComment(error: unknown): string {
-  const fallback = error instanceof Error ? error.message : "Unknown GitHub provider error.";
-  const details = error instanceof Error && error.stack ? error.stack : fallback;
-
-  return [
-    "Coding Automator hit a JavaScript runtime error while handling this webhook.",
-    "",
-    "```text",
-    details,
-    "```"
-  ].join("\n");
 }

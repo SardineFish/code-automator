@@ -3,7 +3,11 @@ import type { ProcessRunner } from "../../providers/process/process-runner.js";
 import { clipLogPreview } from "../logging/log-preview.js";
 import type { LogSink } from "../../types/logging.js";
 import type { ServiceConfig } from "../../types/config.js";
-import type { OrchestrationResult, SubmittedTrigger } from "../../types/runtime.js";
+import type {
+  AppContextTerminalListeners,
+  OrchestrationResult,
+  SubmittedTrigger
+} from "../../types/runtime.js";
 import type { WorkflowTracker } from "../tracking/workflow-tracker.js";
 import { executeWorkflow, prepareWorkspace } from "../execution/execute-workflow.js";
 import { extractTriggerLogContext, extractWorkflowRunContext } from "./trigger-log-context.js";
@@ -19,6 +23,7 @@ export interface ProcessTriggerSubmissionOptions {
   workflowTracker: WorkflowTracker;
   logSink?: LogSink;
   baseEnv?: NodeJS.ProcessEnv;
+  terminalListeners?: AppContextTerminalListeners;
 }
 
 export async function processTriggerSubmission(
@@ -87,6 +92,10 @@ export async function processTriggerSubmission(
   runLog?.info({
     message: "queued workflow run"
   });
+  const terminalListeners = options.terminalListeners;
+  if (terminalListeners && hasTerminalListeners(terminalListeners)) {
+    options.workflowTracker.subscribeTerminalEvents(queuedRun.runId, terminalListeners);
+  }
 
   try {
     const prompt = renderWorkflowPrompt(selected.workflow.prompt, { in: matchedTrigger.input });
@@ -216,4 +225,8 @@ function extractLogContext(triggers: SubmittedTrigger[]): Record<string, unknown
   const firstTrigger = triggers[0];
 
   return firstTrigger ? extractTriggerLogContext(firstTrigger.input) : {};
+}
+
+function hasTerminalListeners(listeners: AppContextTerminalListeners | undefined): boolean {
+  return (listeners?.completed.length ?? 0) > 0 || (listeners?.error.length ?? 0) > 0;
 }
