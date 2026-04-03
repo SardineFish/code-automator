@@ -188,6 +188,65 @@ test("createGitHubRedeliveryWorker persists settled GUIDs across restarts", asyn
   assert.deepEqual(harness.redeliveryCalls, [11]);
 });
 
+test("createGitHubRedeliveryWorker start waits until the first interval before scanning", async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "gao-gh-redelivery-start-"));
+  const env = await createGitHubAppEnv(dir);
+  const config = createServiceConfig();
+  const trackingDir = path.join(dir, "tracking");
+  let listCalls = 0;
+
+  config.tracking = {
+    stateFile: path.join(trackingDir, "state.json"),
+    logFile: path.join(trackingDir, "runs.jsonl")
+  };
+  if (!config.gh) {
+    throw new Error("Missing test GitHub config.");
+  }
+  config.gh = {
+    ...config.gh,
+    redelivery: {
+      intervalSeconds: 1,
+      maxPerRun: 5
+    }
+  };
+
+  t.after(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const worker = createGitHubRedeliveryWorker({
+    github: resolveGitHubProviderConfig(config.gh),
+    tracking: config.tracking,
+    env: {
+      ...process.env,
+      GITHUB_APP_PRIVATE_KEY_PATH: env.pemPath
+    },
+    logSink: createNoOpLogSink(),
+    client: {
+      async listDeliveries() {
+        listCalls += 1;
+        return {
+          deliveries: [],
+          nextPageUrl: undefined
+        };
+      },
+      async getDelivery() {
+        throw new Error("should not be called");
+      },
+      async redeliverDelivery() {}
+    }
+  });
+
+  worker.start();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(listCalls, 0);
+
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  assert.equal(listCalls, 1);
+
+  await worker.stop();
+});
+
 function createIssueOpenedDetail(): GitHubAppWebhookDeliveryDetail {
   return {
     ...createDeliverySummary(11, "guid-retry"),
@@ -423,11 +482,15 @@ test("createGitHubRedeliveryWorker stop waits for an in-flight scan and cancels 
           nextPageUrl: undefined
         };
       },
+      async getDelivery() {
+        throw new Error("should not be called");
+      },
       async redeliverDelivery() {}
     }
   });
 
   worker.start();
+  await new Promise((resolve) => setTimeout(resolve, 1100));
   await started.promise;
 
   let stopResolved = false;
