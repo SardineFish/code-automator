@@ -149,7 +149,7 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
     let skippedAlreadyHandled = 0;
     let skippedByProviderFilter = 0;
 
-    log.info({
+    log.debug({
       message: "scanned GitHub App webhook deliveries",
       pageCount,
       deliveryCount: deliveries.length,
@@ -166,7 +166,7 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
           skippedByProviderFilter += 1;
           settleGuid(state, candidate.guid, scanStartedAtIso);
           await saveState(stateFilePath, state);
-          log.info({
+          log.debug({
             message: "skipped GitHub App webhook delivery by provider filter",
             deliveryId: candidate.id,
             guid: candidate.guid,
@@ -188,7 +188,7 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
         if (threadState === "closed") {
           skippedByProviderFilter += 1;
           settleGuid(state, candidate.guid, scanStartedAtIso);
-          log.info({
+          log.debug({
             message: "skipped GitHub App webhook delivery by provider filter",
             deliveryId: candidate.id,
             guid: candidate.guid,
@@ -209,7 +209,7 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
           skippedAlreadyHandled += 1;
           settleGuid(state, candidate.guid, scanStartedAtIso);
           await saveState(stateFilePath, state);
-          log.info({
+          log.debug({
             message: "skipped GitHub App webhook delivery because already handled",
             deliveryId: candidate.id,
             guid: candidate.guid,
@@ -242,7 +242,7 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
 
     state.checkpoint = scanStartedAtIso;
     await saveState(stateFilePath, pruneGitHubRedeliveryState(state, scanStartedAt));
-    log.info({
+    log.debug({
       message: "completed GitHub App webhook delivery scan",
       deliveryCount: deliveries.length,
       candidateCount: candidates.length,

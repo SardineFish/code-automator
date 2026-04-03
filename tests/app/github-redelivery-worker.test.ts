@@ -14,7 +14,8 @@ import {
   createGitHubRedeliveryWorker,
   selectGitHubRedeliveryCandidates
 } from "../../src/app/providers/github-redelivery-worker.js";
-import { createNoOpLogSink } from "../fixtures/log-sink.js";
+import { createMemoryLogSink, createNoOpLogSink, type CapturedLogRecord } from "../fixtures/log-sink.js";
+import type { LogSink } from "../../src/types/logging.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
 import type { AppConfig } from "../../src/types/config.js";
 
@@ -177,6 +178,78 @@ test("createGitHubRedeliveryWorker retries relevant unhandled failures even when
   assert.deepEqual(harness.redeliveryCalls, [11]);
 });
 
+test("createGitHubRedeliveryWorker only logs successful retries at info", async (t) => {
+  const records: CapturedLogRecord[] = [];
+  const harness = await createWorkerHarness(t, {
+    detail: createIssueCommentDetail("@github-agent-orchestrator /approve"),
+    logSink: createMemoryLogSink(records)
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, [11]);
+  assert.deepEqual(
+    records.filter((record) => record.level === "info").map((record) => record.message),
+    ["retried GitHub App webhook delivery"]
+  );
+  assert.ok(
+    records.some(
+      (record) => record.level === "debug" && record.message === "scanned GitHub App webhook deliveries"
+    )
+  );
+  assert.ok(
+    records.some(
+      (record) => record.level === "debug" && record.message === "completed GitHub App webhook delivery scan"
+    )
+  );
+});
+
+test("createGitHubRedeliveryWorker logs skip paths at debug", async (t) => {
+  const records: CapturedLogRecord[] = [];
+  const harness = await createWorkerHarness(t, {
+    detail: createIssueCommentDetail("@github-agent-orchestrator /approve", { senderLogin: "intruder" }),
+    logSink: createMemoryLogSink(records)
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, []);
+  assert.ok(
+    records.some(
+      (record) =>
+        record.level === "debug" && record.message === "skipped GitHub App webhook delivery by provider filter"
+    )
+  );
+  assert.equal(
+    records.some(
+      (record) =>
+        record.level === "info" && record.message === "skipped GitHub App webhook delivery by provider filter"
+    ),
+    false
+  );
+});
+
+test("createGitHubRedeliveryWorker keeps candidate failures at warn", async (t) => {
+  const records: CapturedLogRecord[] = [];
+  const harness = await createWorkerHarness(t, {
+    detail: createIssueCommentDetail("@github-agent-orchestrator /approve"),
+    getDeliveryError: new Error("detail failed"),
+    logSink: createMemoryLogSink(records)
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, []);
+  assert.ok(
+    records.some(
+      (record) =>
+        record.level === "warn" &&
+        record.message === "GitHub App webhook redelivery candidate handling failed" &&
+        record.errorMessage === "detail failed"
+    )
+  );
+});
+
 test("createGitHubRedeliveryWorker persists settled GUIDs across restarts", async (t) => {
   const harness = await createWorkerHarness(t, {
     detail: createIssueCommentDetail("@github-agent-orchestrator /approve")
@@ -327,7 +400,9 @@ async function createWorkerHarness(
   options: {
     detail: GitHubAppWebhookDeliveryDetail;
     customizeConfig?: (config: AppConfig) => void;
+    getDeliveryError?: Error;
     issueState?: string;
+    logSink?: LogSink;
     pullRequestState?: string;
     reactions?: unknown[];
   }
@@ -340,6 +415,7 @@ async function createWorkerHarness(
   const githubConfig = config.gh;
   const redeliveryCalls: number[] = [];
   const originalFetch = global.fetch;
+  const logSink = options.logSink ?? createNoOpLogSink();
 
   config.tracking = {
     stateFile: path.join(trackingDir, "state.json"),
@@ -413,6 +489,10 @@ async function createWorkerHarness(
       };
     },
     async getDelivery() {
+      if (options.getDeliveryError) {
+        throw options.getDeliveryError;
+      }
+
       return options.detail;
     },
     async redeliverDelivery(_jwt: string, deliveryId: number) {
@@ -428,7 +508,7 @@ async function createWorkerHarness(
         ...process.env,
         GITHUB_APP_PRIVATE_KEY_PATH: env.pemPath
       },
-      logSink: createNoOpLogSink(),
+      logSink,
       client,
       now: () => FIXED_NOW
     },
