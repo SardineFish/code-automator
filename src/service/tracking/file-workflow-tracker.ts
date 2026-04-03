@@ -62,9 +62,7 @@ export function createFileWorkflowTracker(
     },
     async getLaunchableQueuedRuns() {
       return withLock(async () =>
-        Object.values(state.activeRuns).filter(
-          (record) => record.status === "queued" && !isPendingKeyedRun(record)
-        )
+        Object.values(state.activeRuns).filter((record) => isLaunchableQueuedRun(record))
       );
     },
     subscribeTerminalEvents(runId, listeners) {
@@ -257,6 +255,10 @@ export function createFileWorkflowTracker(
     }
 
     return state.keyedWorkspaces[record.workspaceKey]?.activeRunId !== record.runId;
+  }
+
+  function isLaunchableQueuedRun(record: ActiveWorkflowRunRecord): boolean {
+    return record.status === "queued" && !isPendingKeyedRun(record);
   }
 
   function withLock<T>(task: () => Promise<T>): Promise<T> {

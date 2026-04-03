@@ -19,10 +19,20 @@ export interface LaunchQueuedWorkflowRunsOptions {
 export function launchQueuedWorkflowRuns(
   options: LaunchQueuedWorkflowRunsOptions,
   queuedRuns: ActiveWorkflowRunRecord[]
-): void {
-  for (const queuedRun of queuedRuns) {
-    void launchQueuedWorkflowRun(options, queuedRun);
-  }
+): Promise<void> {
+  return Promise.allSettled(
+    queuedRuns.map(async (queuedRun) => {
+      try {
+        await launchQueuedWorkflowRun(options, queuedRun);
+      } catch (error) {
+        options.logSink?.error({
+          message: "workflow launch crashed",
+          runId: queuedRun.runId,
+          errorMessage: error instanceof Error ? error.message : "Unknown workflow launch error."
+        });
+      }
+    })
+  ).then(() => undefined);
 }
 
 async function launchQueuedWorkflowRun(
@@ -130,7 +140,7 @@ async function markQueuedRunError(
   const transition = await options.workflowTracker.markTerminal(queuedRun.runId, "error", {
     errorMessage
   });
-  launchQueuedWorkflowRuns(options, transition.releasedRuns);
+  await launchQueuedWorkflowRuns(options, transition.releasedRuns);
 }
 
 async function cleanupPreparedWorkspace(

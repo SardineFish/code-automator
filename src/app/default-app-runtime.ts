@@ -55,7 +55,8 @@ export async function initializeWorkflowTracking(
   options: AppRuntimeOptions
 ): Promise<void> {
   await options.workflowTracker.initialize();
-  await relaunchQueuedWorkflowRuns(config, options);
+  await launchRecoverableQueuedRuns(config, options);
+  await reconcileWorkflowTracking(config, options);
 
   if (options.reconcileIntervalMs < 1) {
     return;
@@ -94,20 +95,20 @@ async function reconcileWorkflowTracking(
     options.workspaceRepo,
     config.workspace
   );
-  launchQueuedWorkflowRuns(createLaunchOptions(config, options, "workflow-reconcile"), releasedRuns);
+  await launchQueuedWorkflowRuns(createLaunchOptions(config, options, "workflow-reconcile"), releasedRuns);
 }
 
-async function relaunchQueuedWorkflowRuns(
+async function launchRecoverableQueuedRuns(
   config: ServiceConfig,
   options: AppRuntimeOptions
 ): Promise<void> {
-  await options.workflowTracker.reconcileActiveRuns(
-    options.processRunner,
-    options.workspaceRepo,
-    config.workspace
-  );
   const queuedRuns = await options.workflowTracker.getLaunchableQueuedRuns();
-  launchQueuedWorkflowRuns(createLaunchOptions(config, options, "workflow-startup"), queuedRuns);
+
+  if (queuedRuns.length === 0) {
+    return;
+  }
+
+  await launchQueuedWorkflowRuns(createLaunchOptions(config, options, "workflow-startup"), queuedRuns);
 }
 
 function createLaunchOptions(
