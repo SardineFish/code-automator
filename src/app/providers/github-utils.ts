@@ -200,6 +200,39 @@ export async function addCommentReaction(options: {
   throw new Error(`GitHub reaction request failed: ${response.status} ${body}`);
 }
 
+export async function addThreadComment(options: {
+  repoFullName: string;
+  subjectId: number;
+  body: string;
+  token: string;
+  kind: "issue" | "pull_request";
+}): Promise<void> {
+  const [owner, repo] = options.repoFullName.split("/");
+
+  if (!owner || !repo) {
+    throw new Error(`Invalid repository name '${options.repoFullName}'.`);
+  }
+
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${options.subjectId}/comments`, {
+    method: "POST",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${options.token}`,
+      "Content-Type": "application/json",
+      "User-Agent": "github-agent-orchestrator",
+      "X-GitHub-Api-Version": "2022-11-28"
+    },
+    body: JSON.stringify({ body: options.body })
+  });
+
+  if (response.status === 200 || response.status === 201) {
+    return;
+  }
+
+  const body = await response.text();
+  throw new Error(`GitHub ${options.kind} comment request failed: ${response.status} ${body}`);
+}
+
 export interface InstallationTokenProvider {
   createInstallationToken(clientId: string, installationId: number): Promise<string>;
 }

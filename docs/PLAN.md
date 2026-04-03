@@ -120,6 +120,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Keep provider-specific auth, payload parsing, trigger mapping, and config validation inside provider-owned code instead of leaking it into the shared runtime.
 - Extend startup wiring, docs, fixtures, and regression coverage so multiple event sources can coexist without changing first-match-wins workflow behavior.
 
+### Plan 18: GitHub handler runtime error reports [done]
+
+- Keep GitHub runtime-failure reporting provider-owned by posting directly to the current issue or pull request thread from the GitHub handler.
+- Wrap the handler request-to-submit path with one `try/catch` so JavaScript runtime errors can report the message plus stack trace before returning `500`.
+- Add regression coverage for issue-thread and PR-thread failure reporting while preserving the existing matched-run reaction behavior on success.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.
