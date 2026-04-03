@@ -1,7 +1,8 @@
 import { ConfigError } from "../../config/config-error.js";
 import type { GitHubProviderConfig, GitHubRedeliveryConfig, WhitelistConfig } from "../../types/config.js";
 
-export interface ResolvedGitHubProviderConfig extends Omit<GitHubProviderConfig, "redelivery"> {
+export interface ResolvedGitHubProviderConfig extends Omit<GitHubProviderConfig, "redelivery" | "requireMention"> {
+  requireMention: boolean;
   redelivery: false | GitHubRedeliveryConfig;
 }
 
@@ -13,6 +14,7 @@ export function resolveGitHubProviderConfig(value: unknown): ResolvedGitHubProvi
     clientId: readNonEmptyString(github.clientId, "gh.clientId"),
     appId: readPositiveInteger(github.appId, "gh.appId"),
     botHandle: readNonEmptyString(github.botHandle, "gh.botHandle"),
+    requireMention: readBoolean(github.requireMention, "gh.requireMention", true),
     whitelist: readWhitelist(github.whitelist),
     redelivery: readRedelivery(github.redelivery)
   };
@@ -61,6 +63,18 @@ function readStringArray(value: unknown, path: string): string[] {
 function readPositiveInteger(value: unknown, path: string): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
     throw new ConfigError(path, "Expected an integer greater than 0.");
+  }
+
+  return value;
+}
+
+function readBoolean(value: unknown, path: string, defaultValue: boolean): boolean {
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  if (typeof value !== "boolean") {
+    throw new ConfigError(path, "Expected a boolean.");
   }
 
   return value;

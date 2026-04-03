@@ -9,6 +9,7 @@ import {
   getHeader,
   getInstallationTokenProvider,
   mapReviewState,
+  parseCommentMention,
   parseIssueMention,
   readBody,
   readGate,
@@ -31,10 +32,17 @@ import { resolveGitHubProviderConfig } from "./github-config.js";
  * - issue:command:plan
  * - issue:command:approve
  *   Emitted for GitHub "issue_comment" events on issues when the comment
- *   starts with a bot mention followed by one of the supported commands.
+ *   starts with a supported slash command after an optional leading mention.
+ * - issue:at
+ *   Emitted for GitHub "issue_comment" events on issues whenever the comment
+ *   mentions the bot handle anywhere in the body.
  * - issue:comment
- *   Emitted for GitHub "issue_comment" events on issues when the comment
- *   starts with a bot mention, including command comments.
+ *   Emitted for GitHub "issue_comment" events on issues when the comment is
+ *   eligible for generic issue routing. By default that still requires a bot
+ *   mention; setting gh.requireMention to false allows any issue comment.
+ * - pr:at
+ *   Emitted for GitHub PR comment events whenever the comment mentions the bot
+ *   handle anywhere in the body.
  * - pr:comment
  *   Emitted for GitHub "issue_comment" events on pull requests and for
  *   GitHub "pull_request_review_comment" events.
@@ -138,6 +146,21 @@ export async function githubProvider(
       const content = readString(comment, "body") ?? "";
       const commentId = readInteger(comment, "id");
       if (readObject(issue ?? {}, "pull_request")) {
+        const mention = parseCommentMention(content, github.botHandle);
+
+        if (mention.hasMention) {
+          context.trigger("pr:at", {
+            in: {
+              event: "pr:at",
+              user,
+              repo,
+              prId: issueId,
+              content: mention.content
+            },
+            env: triggerEnv
+          });
+        }
+
         // Issue comments on pull requests map directly to PR comment workflows.
         context.trigger("pr:comment", {
           in: {
@@ -153,15 +176,9 @@ export async function githubProvider(
           reactionTarget = { subjectId: commentId, kind: "issue_comment" };
         }
       } else {
-        // Plain issue comments only count when they explicitly mention the bot.
-        const mention = parseIssueMention(content, github.botHandle);
-        if (!mention.hasMention) {
-          requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "not_mentioned" });
-          return respond(response, 202, "Accepted");
-        }
-
+        const mention = parseIssueMention(content, github.botHandle, github.requireMention);
         if (mention.command) {
-          // Command-style mentions can target a specific command workflow first.
+          // Command workflows stay more specific than mention or generic comment handlers.
           context.trigger(`issue:command:${mention.command}`, {
             in: {
               event: `issue:command:${mention.command}`,
@@ -175,7 +192,26 @@ export async function githubProvider(
           });
         }
 
-        // Every valid issue mention also emits the generic issue-comment trigger.
+        if (mention.hasMention) {
+          context.trigger("issue:at", {
+            in: {
+              event: "issue:at",
+              user,
+              repo,
+              issueId,
+              content: mention.content,
+              command: mention.command
+            },
+            env: triggerEnv
+          });
+        }
+
+        if (!mention.hasMention && github.requireMention) {
+          requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "not_mentioned" });
+          return respond(response, 202, "Accepted");
+        }
+
+        // Generic issue-comment workflows can still win later in YAML order.
         context.trigger("issue:comment", {
           in: {
             event: "issue:comment",
@@ -196,7 +232,22 @@ export async function githubProvider(
       if (!prId || !comment) {
         return respond(response, 202, "Accepted");
       }
+      const content = readString(comment, "body");
       const commentId = readInteger(comment, "id");
+      const mention = parseCommentMention(content ?? "", github.botHandle);
+
+      if (mention.hasMention) {
+        context.trigger("pr:at", {
+          in: {
+            event: "pr:at",
+            user,
+            repo,
+            prId,
+            content: mention.content
+          },
+          env: triggerEnv
+        });
+      }
 
       context.trigger("pr:comment", {
         in: {
@@ -204,7 +255,7 @@ export async function githubProvider(
           user,
           repo,
           prId,
-          content: readString(comment, "body")
+          content
         },
         env: triggerEnv
       });

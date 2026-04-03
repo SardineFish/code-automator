@@ -61,6 +61,7 @@ gh:
   clientId: your-github-app-client-id
   appId: 123456
   botHandle: coding-automator
+  requireMention: true
   whitelist:
     user:
       - octocat
@@ -85,7 +86,7 @@ workflow:
     prompt: Check issue ${in.issueId} in ${in.repo}. Implement the approved plan, push your branch, and open a pull request.
   issue-at:
     on:
-      - issue:comment
+      - issue:at
     use: codex
     prompt: Check issue ${in.issueId} in ${in.repo}. Reply to the user's request: ${in.content}. Do not write code.
 ```
@@ -104,8 +105,9 @@ Relative `tracking` paths resolve from the YAML file location. The config loader
 
 - Opening an issue or commenting `@<bot-handle> /plan` triggers the planning workflow.
 - Commenting `@<bot-handle> /approve` triggers the implementation workflow.
-- Other issue comments that mention the bot fall through to the generic issue reply workflow.
-- Workflow matching is first-match-wins, so put command-specific workflows before the generic issue mention workflow.
+- `issue:at` and `pr:at` fire whenever `@<bot-handle>` appears anywhere in an issue or PR comment body.
+- When `gh.requireMention` is `false`, issue comments may match `issue:comment` without a mention, and `/plan` or `/approve` on issues no longer need a leading mention.
+- Workflow matching is first-match-wins, so put command-specific workflows before mention or generic comment workflows.
 
 ## Optional Redelivery Polling
 

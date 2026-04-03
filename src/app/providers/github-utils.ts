@@ -38,34 +38,27 @@ export function readInteger(value: Record<string, unknown>, key: string): number
   return typeof field === "number" && Number.isInteger(field) ? field : undefined;
 }
 
-export function parseIssueMention(bodyText: string, botHandle: string): IssueMentionParseResult {
-  const mentionPattern = new RegExp(`^\\s*@${escapeRegex(botHandle)}\\s*(.*)`, "si");
-  const mentionMatch = bodyText.match(mentionPattern);
-
-  if (!mentionMatch) {
-    return { hasMention: false, content: bodyText };
-  }
-
-  const remainder = (mentionMatch[1] ?? "").trim();
-  if (remainder === "") {
-    return { hasMention: true, content: "" };
-  }
-
-  const commandMatch = remainder.match(/^\/?([a-z0-9-]+)\b\s*(.*)$/i);
-
-  if (!commandMatch) {
-    return { hasMention: true, content: remainder };
-  }
-
-  const commandName = commandMatch[1].toLowerCase();
-  if (!SUPPORTED_COMMANDS.has(commandName)) {
-    return { hasMention: true, content: remainder };
-  }
+export function parseCommentMention(bodyText: string, botHandle: string): Omit<IssueMentionParseResult, "command"> {
+  const leadingMentionContent = readLeadingMentionContent(bodyText, botHandle);
 
   return {
-    hasMention: true,
-    content: remainder,
-    command: commandName
+    hasMention: hasBotMention(bodyText, botHandle),
+    content: leadingMentionContent ?? bodyText.trim()
+  };
+}
+
+export function parseIssueMention(
+  bodyText: string,
+  botHandle: string,
+  requireMention = true
+): IssueMentionParseResult {
+  const mention = parseCommentMention(bodyText, botHandle);
+  const leadingMentionContent = readLeadingMentionContent(bodyText, botHandle);
+  const commandSource = leadingMentionContent ?? (requireMention ? undefined : bodyText.trim());
+
+  return {
+    ...mention,
+    command: readSupportedSlashCommand(commandSource)
   };
 }
 
@@ -333,4 +326,33 @@ export const fetchGitHubInstallationTokenClient: GitHubInstallationTokenClient =
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasBotMention(bodyText: string, botHandle: string): boolean {
+  return new RegExp(`(^|[^a-z0-9-])@${escapeRegex(botHandle)}(?![a-z0-9-])`, "i").test(bodyText);
+}
+
+function readLeadingMentionContent(bodyText: string, botHandle: string): string | undefined {
+  const mentionPattern = new RegExp(`^\\s*@${escapeRegex(botHandle)}(?=\\s|$)\\s*(.*)$`, "si");
+  const mentionMatch = bodyText.match(mentionPattern);
+
+  if (!mentionMatch) {
+    return undefined;
+  }
+
+  return (mentionMatch[1] ?? "").trim();
+}
+
+function readSupportedSlashCommand(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const commandMatch = value.match(/^\/([a-z0-9-]+)\b/i);
+  if (!commandMatch) {
+    return undefined;
+  }
+
+  const commandName = commandMatch[1].toLowerCase();
+  return SUPPORTED_COMMANDS.has(commandName) ? commandName : undefined;
 }
