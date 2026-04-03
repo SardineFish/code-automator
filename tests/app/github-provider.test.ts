@@ -169,6 +169,31 @@ test("GitHub provider emits issue:at for inline mentions", async (t) => {
   assert.deepEqual(started, ["codex exec 'Handle please @github-agent-orchestrator summarize'"]);
 });
 
+test("GitHub provider preserves multi-line text for issue:at mentions", async (t) => {
+  const { commands, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      config.workflow = [
+        {
+          name: "issue-at",
+          on: ["issue:at"],
+          use: "codex",
+          prompt: "Issue at ${in.issueId}: ${in.content}"
+        }
+      ];
+    }
+  });
+  const response = await signedRequest(
+    url,
+    issueCommentPayload("@github-agent-orchestrator summarize\nwith details"),
+    "issue_comment"
+  );
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Issue at 7: summarize\nwith details'"]);
+  assert.deepEqual(started, ["codex exec 'Issue at 7: summarize\nwith details'"]);
+});
+
 test("GitHub provider emits pr:at for mentioned PR comments and review comments", async (t) => {
   const { commands, started, url } = await startGitHubApp(t, {
     customizeConfig(config) {
