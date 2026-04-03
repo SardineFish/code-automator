@@ -20,6 +20,7 @@ interface GitHubRedeliveryState {
 export interface GitHubRedeliveryWorker {
   start(): void;
   runOnce(): Promise<void>;
+  stop(): Promise<void>;
 }
 
 export interface GitHubRedeliveryWorkerOptions {
@@ -37,7 +38,8 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
   if (!redelivery) {
     return {
       start() {},
-      async runOnce() {}
+      async runOnce() {},
+      async stop() {}
     };
   }
   const redeliveryConfig = redelivery;
@@ -50,17 +52,23 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
   const log = options.logSink.child({ source: "gh-redelivery" });
   let started = false;
   let inFlight: Promise<void> | undefined;
+  let timer: NodeJS.Timeout | undefined;
+  let stopped = false;
 
   return {
     start() {
-      if (started) {
+      if (started || stopped) {
         return;
       }
 
       started = true;
       void this.runOnce().catch((error) => logWorkerError(log, error));
 
-      const timer = setInterval(() => {
+      timer = setInterval(() => {
+        if (stopped) {
+          return;
+        }
+
         void this.runOnce().catch((error) => logWorkerError(log, error));
       }, redeliveryConfig.intervalSeconds * 1000);
 
@@ -76,6 +84,16 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
       });
 
       return inFlight;
+    },
+    async stop() {
+      stopped = true;
+
+      if (timer) {
+        clearInterval(timer);
+        timer = undefined;
+      }
+
+      await inFlight;
     }
   };
 

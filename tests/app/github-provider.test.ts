@@ -245,7 +245,7 @@ async function startGitHubApp(
     return originalFetch(input, init);
   };
 
-  const server = await App(config, {
+  const app = await App(config, {
     processRunner: {
       async run() {
         throw new Error("should not run");
@@ -283,6 +283,9 @@ async function startGitHubApp(
       async updateQueuedRun() {
         return {} as never;
       },
+      async getActiveRunCount() {
+        return 0;
+      },
       async markRunning(_runId: string, details: { command: string }) {
         started.push(details.command);
         return {} as never;
@@ -305,19 +308,19 @@ async function startGitHubApp(
 
   t.after(async () => {
     global.fetch = originalFetch;
-    server.close();
-    await once(server, "close");
+    app.server.close();
+    await once(app.server, "close");
     await rm(env.dir, { recursive: true, force: true });
   });
 
-  const address = server.address();
+  const address = app.server.address();
 
   if (!address || typeof address === "string") {
     throw new Error("Unexpected test server address.");
   }
 
   return {
-    server,
+    server: app.server,
     commands,
     commentCalls,
     envs,

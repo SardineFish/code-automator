@@ -3,7 +3,8 @@ import { pathToFileURL } from "node:url";
 import { loadServiceConfig } from "../config/load-service-config.js";
 import { createConsoleLogSink } from "../providers/logging/winston-log-sink.js";
 import { App } from "./app.js";
-import { resolveBaseEnv } from "./default-app-runtime.js";
+import { createCliShutdownCoordinator } from "./cli-shutdown.js";
+import { createAppRuntimeOptions, resolveBaseEnv } from "./default-app-runtime.js";
 import { resolveGitHubProviderConfig } from "./providers/github-config.js";
 import { githubProvider } from "./providers/github-provider.js";
 import { createGitHubRedeliveryWorker } from "./providers/github-redelivery-worker.js";
@@ -17,6 +18,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
   const baseEnv = resolveBaseEnv(undefined);
   const logSink = createConsoleLogSink(config.logging.level);
   const runtimeConfig = { ...config, gh: github };
+  const runtimeOptions = createAppRuntimeOptions(runtimeConfig, { baseEnv, logSink });
 
   requireEnv(baseEnv, "GITHUB_WEBHOOK_SECRET");
   requireEnv(baseEnv, "GITHUB_APP_PRIVATE_KEY_PATH");
@@ -28,10 +30,16 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
     logSink
   });
 
-  await App(runtimeConfig, { baseEnv, logSink })
+  const app = await App(runtimeConfig, runtimeOptions)
     .provider(github.url, githubProvider)
     .listen();
+  const shutdown = createCliShutdownCoordinator({
+    app,
+    workflowTracker: runtimeOptions.workflowTracker,
+    redeliveryWorker
+  });
 
+  process.on("SIGINT", () => shutdown.handleSigint());
   redeliveryWorker.start();
 }
 

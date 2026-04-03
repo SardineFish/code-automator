@@ -1,19 +1,21 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-
 import type { ServiceConfig } from "../types/config.js";
 import type { LogSink } from "../types/logging.js";
 import type { AppContext } from "../types/runtime.js";
 import { createAppRuntimeOptions, type AppRuntimeOptions, type AppRuntimeOverrides, initializeWorkflowTracking } from "./default-app-runtime.js";
 import { createAppContext } from "./create-app-context.js";
-
+import { createRequestDrainController } from "./request-drain.js";
 export type AppOptions = AppRuntimeOverrides;
-
+export interface AppLifecycle {
+  server: Server;
+  stopAcceptingRequests(): Promise<void>;
+  waitForIdleRequests(): Promise<void>;
+}
 export type ProviderHandler = (
   req: IncomingMessage,
   res: ServerResponse,
   context: AppContext
 ) => Promise<void> | void;
-
 export function App(config: ServiceConfig, options: AppOptions = {}): AppBuilder {
   return new AppBuilder(config, createAppRuntimeOptions(config, options));
 }
@@ -39,13 +41,18 @@ class AppBuilder {
     return this;
   }
 
-  async listen(): Promise<Server> {
+  async listen(): Promise<AppLifecycle> {
     await this.initialize();
 
     const server = createServer((request, response) => {
       const path = getRequestPath(request);
       const requestLogSink = this.runtime.logSink.child({ path });
       logCompletedRequest(request, response, path, requestLogSink);
+
+      if (!requestDrain.tryStartRequest(response)) {
+        respond(response, 503, "Service Unavailable");
+        return;
+      }
 
       void this.handleRequest(path, request, response).catch((error) => {
         requestLogSink.error({
@@ -59,6 +66,7 @@ class AppBuilder {
         }
       });
     });
+    const requestDrain = createRequestDrainController(server);
 
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
@@ -75,7 +83,15 @@ class AppBuilder {
       routePaths: [...this.#providers.keys()]
     });
 
-    return server;
+    return {
+      server,
+      stopAcceptingRequests() {
+        return requestDrain.stopAcceptingRequests();
+      },
+      waitForIdleRequests() {
+        return requestDrain.waitForIdleRequests();
+      }
+    };
   }
 
   async handleRequest(

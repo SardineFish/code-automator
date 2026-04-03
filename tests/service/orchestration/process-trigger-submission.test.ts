@@ -79,6 +79,9 @@ test("processTriggerSubmission launches the first matching workflow with matched
       async updateQueuedRun() {
         return {} as never;
       },
+      async getActiveRunCount() {
+        return 0;
+      },
       async markRunning(runId: string, details: { command: string }) {
         running.push(`${runId}:${details.command}`);
         return {} as never;
@@ -136,6 +139,9 @@ test("processTriggerSubmission ignores empty trigger submissions", async () => {
       },
       async updateQueuedRun() {
         throw new Error("should not run");
+      },
+      async getActiveRunCount() {
+        return 0;
       },
       async markRunning() {
         throw new Error("should not run");
