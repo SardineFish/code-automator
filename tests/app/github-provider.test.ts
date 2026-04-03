@@ -206,6 +206,32 @@ test("GitHub provider emits pr:at for mentioned PR comments and review comments"
   assert.deepEqual(started, scenarios.map((scenario) => scenario.expectedCommand));
 });
 
+test("GitHub provider preserves multi-line PR mention content", async (t) => {
+  const { commands, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      config.workflow = [
+        {
+          name: "pr-at",
+          on: ["pr:at"],
+          use: "codex",
+          prompt: "At PR ${in.prId}: ${in.content}"
+        },
+        ...config.workflow
+      ];
+    }
+  });
+  const response = await signedRequest(
+    url,
+    reviewCommentPayload("@github-agent-orchestrator review this\nwith more context"),
+    "pull_request_review_comment"
+  );
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'At PR 8: review this\nwith more context'"]);
+  assert.deepEqual(started, ["codex exec 'At PR 8: review this\nwith more context'"]);
+});
+
 test("GitHub provider routes the documented workflows through the provider app", async (t) => {
   const { commands, commentCalls, envs, reactionCalls, started, url } = await startGitHubApp(t);
   const scenarios = [
