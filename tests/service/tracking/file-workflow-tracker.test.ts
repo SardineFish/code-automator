@@ -20,6 +20,7 @@ test("fileWorkflowTracker persists running runs and appends terminal results", a
   );
 
   await tracker.initialize();
+  assert.equal(await tracker.getActiveRunCount(), 0);
   const queued = await tracker.createQueuedRun(
     {
       deliveryId: "delivery-1",
@@ -33,6 +34,7 @@ test("fileWorkflowTracker persists running runs and appends terminal results", a
     },
     ""
   );
+  assert.equal(await tracker.getActiveRunCount(), 1);
 
   await tracker.markRunning(queued.runId, {
     pid: 4242,
@@ -40,6 +42,7 @@ test("fileWorkflowTracker persists running runs and appends terminal results", a
     startedAt: "2026-04-02T00:00:00.000Z",
     workspacePath: "/tmp/workspace-1"
   });
+  assert.equal(await tracker.getActiveRunCount(), 1);
   await tracker.markTerminal(queued.runId, "succeeded", {
     completedAt: "2026-04-02T00:00:10.000Z",
     process: {
@@ -54,6 +57,7 @@ test("fileWorkflowTracker persists running runs and appends terminal results", a
       completedAt: "2026-04-02T00:00:10.000Z"
     }
   });
+  assert.equal(await tracker.getActiveRunCount(), 0);
 
   const state = JSON.parse(await readFile(path.join(dir, "state.json"), "utf8")) as {
     activeRuns: Record<string, unknown>;
@@ -107,6 +111,7 @@ test("fileWorkflowTracker reconciles active runs from result files and missing p
     },
     ""
   );
+  assert.equal(await tracker.getActiveRunCount(), 2);
 
   await tracker.markRunning(completedRun.runId, {
     pid: 1234,
@@ -144,6 +149,7 @@ test("fileWorkflowTracker reconciles active runs from result files and missing p
   );
 
   await reloadedTracker.initialize();
+  assert.equal(await reloadedTracker.getActiveRunCount(), 2);
   await reloadedTracker.reconcileActiveRuns(
     {
       async run() {
@@ -183,6 +189,7 @@ test("fileWorkflowTracker reconciles active runs from result files and missing p
       cleanupAfterRun: false
     }
   );
+  assert.equal(await reloadedTracker.getActiveRunCount(), 0);
 
   const logLines = (await readFile(path.join(dir, "runs.jsonl"), "utf8"))
     .trim()
@@ -220,6 +227,7 @@ test("fileWorkflowTracker does not mark fresh queued runs as lost", async () => 
     },
     ""
   );
+  assert.equal(await tracker.getActiveRunCount(), 1);
 
   await tracker.reconcileActiveRuns(
     {
@@ -253,6 +261,7 @@ test("fileWorkflowTracker does not mark fresh queued runs as lost", async () => 
     activeRuns: Record<string, unknown>;
   };
 
+  assert.equal(await tracker.getActiveRunCount(), 1);
   assert.ok(queuedRun.runId in state.activeRuns);
 });
 

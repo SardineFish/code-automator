@@ -377,6 +377,74 @@ async function createWorkerHarness(
   };
 }
 
+test("createGitHubRedeliveryWorker stop waits for an in-flight scan and cancels future intervals", async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "gao-gh-redelivery-stop-"));
+  const env = await createGitHubAppEnv(dir);
+  const config = createServiceConfig();
+  const trackingDir = path.join(dir, "tracking");
+  const started = createDeferred<void>();
+  const release = createDeferred<void>();
+  let listCalls = 0;
+
+  config.tracking = {
+    stateFile: path.join(trackingDir, "state.json"),
+    logFile: path.join(trackingDir, "runs.jsonl")
+  };
+  if (!config.gh) {
+    throw new Error("Missing test GitHub config.");
+  }
+  config.gh = {
+    ...config.gh,
+    redelivery: {
+      intervalSeconds: 1,
+      maxPerRun: 5
+    }
+  };
+
+  t.after(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const worker = createGitHubRedeliveryWorker({
+    github: resolveGitHubProviderConfig(config.gh),
+    tracking: config.tracking,
+    env: {
+      ...process.env,
+      GITHUB_APP_PRIVATE_KEY_PATH: env.pemPath
+    },
+    logSink: createNoOpLogSink(),
+    client: {
+      async listDeliveries() {
+        listCalls += 1;
+        started.resolve();
+        await release.promise;
+        return {
+          deliveries: [],
+          nextPageUrl: undefined
+        };
+      },
+      async redeliverDelivery() {}
+    }
+  });
+
+  worker.start();
+  await started.promise;
+
+  let stopResolved = false;
+  const stopPromise = worker.stop().then(() => {
+    stopResolved = true;
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(stopResolved, false);
+
+  release.resolve();
+  await stopPromise;
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+
+  assert.equal(listCalls, 1);
+});
+
 async function createGitHubAppEnv(dir: string) {
   const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const pem = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
@@ -385,4 +453,15 @@ async function createGitHubAppEnv(dir: string) {
   await writeFile(pemPath, pem);
 
   return { pemPath };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, resolve, reject };
 }

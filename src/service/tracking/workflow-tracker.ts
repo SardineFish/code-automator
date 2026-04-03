@@ -12,6 +12,7 @@ export interface WorkflowTracker {
   initialize(): Promise<void>;
   createQueuedRun(context: WorkflowRunContext, workspacePath: string): Promise<ActiveWorkflowRunRecord>;
   updateQueuedRun(runId: string, details: { workspacePath: string }): Promise<ActiveWorkflowRunRecord>;
+  getActiveRunCount(): Promise<number>;
   markRunning(
     runId: string,
     details: { pid: number; command: string; startedAt: string; workspacePath: string }

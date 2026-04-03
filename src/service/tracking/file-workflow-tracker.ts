@@ -60,6 +60,9 @@ export function createFileWorkflowTracker(
         return nextRecord;
       });
     },
+    async getActiveRunCount() {
+      return withLock(async () => Object.keys(state.activeRuns).length);
+    },
     async markRunning(runId, details) {
       return withLock(async () => {
         const record = requireActiveRun(runId, state.activeRuns[runId]);

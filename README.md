@@ -146,7 +146,7 @@ The redelivery worker stores its checkpoint next to the tracked run artifacts un
 - Runs are launched as detached background processes.
 - `tracking.stateFile` stores non-terminal runs, and `tracking.logFile` stores append-only terminal outcomes.
 - Per-run wrapper, PID, result, stdout, and stderr files are stored next to the state file under a derived run-artifacts directory.
-- The service can stop immediately and recover workflow state on restart from persisted tracking metadata.
+- Press `Ctrl-C` once to stop accepting new HTTP requests, stop future GitHub redelivery scans, and wait for tracked `queued` or `running` workflows to drain before exiting `0`. Press `Ctrl-C` again to exit immediately.
 - If `gh.redelivery` is enabled, a second background worker scans recent GitHub App deliveries and requests redelivery for unresolved failures.
 - `logging.level: debug` adds inbound request metadata and clipped executor command and stdout previews to runtime logs.
 - Executors are command templates only; containerization, sandboxing, and repo checkout strategy stay operator-defined.
