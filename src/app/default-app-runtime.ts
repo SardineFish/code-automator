@@ -55,10 +55,7 @@ export async function initializeWorkflowTracking(
   options: AppRuntimeOptions
 ): Promise<void> {
   await options.workflowTracker.initialize();
-  await reconcileWorkflowTracking(
-    config,
-    options
-  );
+  await relaunchQueuedWorkflowRuns(config, options);
 
   if (options.reconcileIntervalMs < 1) {
     return;
@@ -97,15 +94,33 @@ async function reconcileWorkflowTracking(
     options.workspaceRepo,
     config.workspace
   );
-  launchQueuedWorkflowRuns(
-    {
-      config,
-      processRunner: options.processRunner,
-      workspaceRepo: options.workspaceRepo,
-      workflowTracker: options.workflowTracker,
-      logSink: options.logSink.child({ source: "workflow-reconcile" }),
-      baseEnv: options.baseEnv
-    },
-    releasedRuns
+  launchQueuedWorkflowRuns(createLaunchOptions(config, options, "workflow-reconcile"), releasedRuns);
+}
+
+async function relaunchQueuedWorkflowRuns(
+  config: ServiceConfig,
+  options: AppRuntimeOptions
+): Promise<void> {
+  await options.workflowTracker.reconcileActiveRuns(
+    options.processRunner,
+    options.workspaceRepo,
+    config.workspace
   );
+  const queuedRuns = await options.workflowTracker.getLaunchableQueuedRuns();
+  launchQueuedWorkflowRuns(createLaunchOptions(config, options, "workflow-startup"), queuedRuns);
+}
+
+function createLaunchOptions(
+  config: ServiceConfig,
+  options: AppRuntimeOptions,
+  source: string
+) {
+  return {
+    config,
+    processRunner: options.processRunner,
+    workspaceRepo: options.workspaceRepo,
+    workflowTracker: options.workflowTracker,
+    logSink: options.logSink.child({ source }),
+    baseEnv: options.baseEnv
+  };
 }

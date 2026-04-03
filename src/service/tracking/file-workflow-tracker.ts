@@ -60,6 +60,13 @@ export function createFileWorkflowTracker(
         };
       });
     },
+    async getLaunchableQueuedRuns() {
+      return withLock(async () =>
+        Object.values(state.activeRuns).filter(
+          (record) => record.status === "queued" && !isPendingKeyedRun(record)
+        )
+      );
+    },
     subscribeTerminalEvents(runId, listeners) {
       const nextListeners = cloneTerminalListeners(listeners);
       if (!hasTerminalListeners(nextListeners)) {

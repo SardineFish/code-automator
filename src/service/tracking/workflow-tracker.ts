@@ -18,6 +18,7 @@ export interface WorkflowTracker {
     context: WorkflowRunContext,
     details: { workspacePath: string; workspaceKey?: string; launch: WorkflowRunLaunchData }
   ): Promise<QueuedWorkflowRunTransition>;
+  getLaunchableQueuedRuns(): Promise<ActiveWorkflowRunRecord[]>;
   subscribeTerminalEvents(runId: string, listeners: AppContextTerminalListeners): () => void;
   updateQueuedRun(runId: string, details: { workspacePath: string }): Promise<ActiveWorkflowRunRecord>;
   getActiveRunCount(): Promise<number>;

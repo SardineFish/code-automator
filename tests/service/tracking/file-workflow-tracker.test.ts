@@ -404,6 +404,10 @@ test("fileWorkflowTracker serializes keyed workspace runs and releases the next 
 
   assert.equal(first.shouldLaunchNow, true);
   assert.equal(second.shouldLaunchNow, false);
+  assert.deepEqual(
+    (await tracker.getLaunchableQueuedRuns()).map((run) => run.runId),
+    [first.record.runId]
+  );
 
   const state = JSON.parse(await readFile(path.join(dir, "state.json"), "utf8")) as {
     keyedWorkspaces: Record<string, { activeRunId?: string; pendingRunIds: string[] }>;
@@ -419,6 +423,10 @@ test("fileWorkflowTracker serializes keyed workspace runs and releases the next 
 
   assert.equal(transition.completed?.status, "succeeded");
   assert.deepEqual(transition.releasedRuns.map((run) => run.runId), [second.record.runId]);
+  assert.deepEqual(
+    (await tracker.getLaunchableQueuedRuns()).map((run) => run.runId),
+    [second.record.runId]
+  );
 });
 
 test("fileWorkflowTracker does not lose an old queued keyed follower during the same reconcile pass", async () => {

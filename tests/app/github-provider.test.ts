@@ -719,6 +719,9 @@ async function startGitHubApp(
           shouldLaunchNow: true
         };
       },
+      async getLaunchableQueuedRuns() {
+        return [];
+      },
       subscribeTerminalEvents(runId, listeners) {
         terminalListeners.set(runId, {
           completed: [...listeners.completed],

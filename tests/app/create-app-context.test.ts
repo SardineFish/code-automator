@@ -126,6 +126,9 @@ function createRuntime(
           shouldLaunchNow: false
         };
       },
+      async getLaunchableQueuedRuns() {
+        return [];
+      },
       subscribeTerminalEvents(runId, listeners) {
         subscriptions.push({
           runId,
