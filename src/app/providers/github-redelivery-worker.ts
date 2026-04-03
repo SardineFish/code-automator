@@ -12,6 +12,7 @@ import type {
 import { fetchGitHubAppWebhookDeliveryClient } from "./github-redelivery-client.js";
 import type { ResolvedGitHubProviderConfig } from "./github-config.js";
 import {
+  type GitHubReactionListTarget,
   getGitHubAppJwtProvider,
   getInstallationTokenProvider,
   listCommentReactions,
@@ -36,14 +37,9 @@ interface GitHubRedeliveryState {
   settledGuids: Record<string, string>;
 }
 
-interface GitHubReactionTarget {
-  kind: "issue" | "issue_comment" | "pull_request_review_comment";
-  subjectId: number;
-}
-
 interface GitHubRelevantDelivery {
   gate: WebhookGateContext;
-  reactionTarget?: GitHubReactionTarget;
+  reactionTarget?: GitHubReactionListTarget;
   threadTarget?: GitHubThreadTarget;
 }
 
@@ -321,7 +317,7 @@ export function getGitHubRedeliveryStateFilePath(stateFile: string): string {
 
 async function isAlreadyHandledDelivery(
   repoFullName: string,
-  reactionTarget: GitHubReactionTarget | undefined,
+  reactionTarget: GitHubReactionListTarget | undefined,
   token: string,
   botHandle: string
 ): Promise<boolean> {
@@ -613,8 +609,8 @@ function evaluateRedeliveryDelivery(
 
 function readReactionTarget(
   subjectId: number | undefined,
-  kind: GitHubReactionTarget["kind"]
-): GitHubReactionTarget | undefined {
+  kind: GitHubReactionListTarget["kind"]
+): GitHubReactionListTarget | undefined {
   return subjectId === undefined ? undefined : { subjectId, kind };
 }
 

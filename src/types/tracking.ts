@@ -18,12 +18,6 @@ export interface WorkflowRunArtifacts {
   stderrPath: string;
 }
 
-export type WorkflowRunReactionTarget =
-  | { kind: "issue"; subjectId: number }
-  | { kind: "issue_comment"; subjectId: number }
-  | { kind: "pull_request_review"; subjectId: number; nodeId: string }
-  | { kind: "pull_request_review_comment"; subjectId: number };
-
 export interface WorkflowRunContext {
   source?: string;
   deliveryId?: string;
@@ -34,7 +28,6 @@ export interface WorkflowRunContext {
   repoFullName?: string;
   actorLogin?: string;
   installationId?: number;
-  reactionTarget?: WorkflowRunReactionTarget;
 }
 
 export interface ActiveWorkflowRunRecord extends WorkflowRunContext {

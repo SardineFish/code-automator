@@ -4,7 +4,6 @@ import { readFile } from "node:fs/promises";
 
 import { RequestBodyError, readRequestBody } from "../../runtime/http/read-request-body.js";
 import type { WebhookGateContext } from "../../types/runtime.js";
-import type { WorkflowRunReactionTarget } from "../../types/tracking.js";
 import type { GitHubReview } from "../../types/workflow-input.js";
 
 const SUPPORTED_COMMANDS = new Set(["plan", "approve"]);
@@ -160,13 +159,19 @@ export function respond(response: ServerResponse, statusCode: number, body: stri
   response.end(body);
 }
 
-export type GitHubReactionListTarget = Exclude<WorkflowRunReactionTarget, { kind: "pull_request_review" }>;
+export type GitHubReactionTarget =
+  | { kind: "issue"; subjectId: number }
+  | { kind: "issue_comment"; subjectId: number }
+  | { kind: "pull_request_review"; subjectId: number; nodeId: string }
+  | { kind: "pull_request_review_comment"; subjectId: number };
+
+export type GitHubReactionListTarget = Exclude<GitHubReactionTarget, { kind: "pull_request_review" }>;
 
 export async function addGitHubReaction(options: {
   repoFullName: string;
   reaction: "eyes" | "rocket";
   token: string;
-  target: WorkflowRunReactionTarget;
+  target: GitHubReactionTarget;
 }): Promise<void> {
   if (options.target.kind === "pull_request_review") {
     const response = await fetch("https://api.github.com/graphql", {

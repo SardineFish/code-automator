@@ -18,10 +18,7 @@ export function buildWorkflowTerminalEvent(
         matchedTrigger: record.matchedTrigger,
         executorName: record.executorName,
         completedAt: record.completedAt,
-        status: "succeeded",
-        repoFullName: record.repoFullName,
-        installationId: record.installationId,
-        reactionTarget: record.reactionTarget
+        status: "succeeded"
       }
     };
   }
@@ -36,10 +33,7 @@ export function buildWorkflowTerminalEvent(
         executorName: record.executorName,
         completedAt: record.completedAt,
         status: record.status,
-        error: new Error(resolveWorkflowTerminalErrorMessage(record)),
-        repoFullName: record.repoFullName,
-        installationId: record.installationId,
-        reactionTarget: record.reactionTarget
+        error: new Error(resolveWorkflowTerminalErrorMessage(record))
       }
     };
   }

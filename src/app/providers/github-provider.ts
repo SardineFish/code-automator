@@ -3,12 +3,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { getWhitelistRejectionReason } from "../../service/orchestration/check-whitelist.js";
 import { verifyWebhookSignature } from "../../service/security/verify-webhook-signature.js";
 import type { AppContext } from "../../types/runtime.js";
-import type { WorkflowRunReactionTarget } from "../../types/tracking.js";
 import {
   formatRuntimeErrorComment,
   formatWorkflowTerminalErrorComment,
   getReportTarget
 } from "./github-provider-reporting.js";
+import type { GitHubReactionTarget } from "./github-utils.js";
 import {
   addGitHubReaction,
   addThreadComment,
@@ -124,27 +124,21 @@ export async function githubProvider(
   );
   const triggerEnv = { GH_TOKEN: installationToken };
   const reportTarget = getReportTarget(eventName, issue, pullRequest);
-  let reactionTarget: WorkflowRunReactionTarget | undefined;
+  let reactionTarget: GitHubReactionTarget | undefined;
 
   function triggerWorkflow(name: Parameters<AppContext["trigger"]>[0], input: Record<string, unknown>): void {
     context.trigger(name, {
       in: {
         ...input,
         ...(deliveryId ? { deliveryId } : {}),
-        installationId: gateContext.installationId,
-        ...serializeReactionTarget(reactionTarget)
+        installationId: gateContext.installationId
       },
       env: triggerEnv
     });
   }
 
-  async function addWorkflowCompletionReaction(event: {
-    runId: string;
-    repoFullName?: string;
-    installationId?: number;
-    reactionTarget?: WorkflowRunReactionTarget;
-  }, reactionToken?: string): Promise<void> {
-    if (!event.repoFullName || event.installationId === undefined || !event.reactionTarget) {
+  async function addWorkflowCompletionReaction(runId: string, reactionToken?: string): Promise<void> {
+    if (!reactionTarget) {
       return;
     }
 
@@ -153,18 +147,18 @@ export async function githubProvider(
         reactionToken ??
         (await installationTokenProvider.createInstallationToken(
           github.clientId,
-          event.installationId
+          gateContext.installationId
         ));
       await addGitHubReaction({
-        repoFullName: event.repoFullName,
+        repoFullName: repo,
         reaction: "rocket",
         token,
-        target: event.reactionTarget
+        target: reactionTarget
       });
     } catch (error) {
       requestLog.warn({
         message: "failed to add workflow completion reaction",
-        runId: event.runId,
+        runId,
         errorMessage: error instanceof Error ? error.message : "Unknown reaction error."
       });
     }
@@ -177,7 +171,7 @@ export async function githubProvider(
           github.clientId,
           gateContext.installationId
         );
-        await addWorkflowCompletionReaction(event, reportToken);
+        await addWorkflowCompletionReaction(event.runId, reportToken);
         await addThreadComment({
           repoFullName: repo,
           subjectId: reportTarget.subjectId,
@@ -360,11 +354,11 @@ export async function githubProvider(
 
     if (reactionTarget) {
       context.on("completed", async (event) => {
-        await addWorkflowCompletionReaction(event);
+        await addWorkflowCompletionReaction(event.runId);
       });
       if (!reportTarget) {
         context.on("error", async (event) => {
-          await addWorkflowCompletionReaction(event);
+          await addWorkflowCompletionReaction(event.runId);
         });
       }
     }
@@ -415,16 +409,4 @@ export async function githubProvider(
 
     respond(response, 500, "Internal Server Error");
   }
-}
-
-function serializeReactionTarget(target: WorkflowRunReactionTarget | undefined): Record<string, number | string> {
-  if (!target) {
-    return {};
-  }
-
-  return {
-    githubReactionKind: target.kind,
-    githubReactionSubjectId: target.subjectId,
-    ...(target.kind === "pull_request_review" ? { githubReactionNodeId: target.nodeId } : {})
-  };
 }

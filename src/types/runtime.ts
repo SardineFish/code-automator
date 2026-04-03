@@ -1,7 +1,7 @@
 import type { TriggerKey } from "./triggers.js";
 import type { ServiceConfig, WorkflowDefinition } from "./config.js";
 import type { LogSink } from "./logging.js";
-import type { WorkflowRunReactionTarget, WorkflowRunStatus } from "./tracking.js";
+import type { WorkflowRunStatus } from "./tracking.js";
 
 export interface WebhookGateContext {
   repoFullName: string;
@@ -24,9 +24,6 @@ export interface WorkflowCompletedEventPayload {
   executorName: string;
   completedAt: string;
   status: "succeeded";
-  repoFullName?: string;
-  installationId?: number;
-  reactionTarget?: WorkflowRunReactionTarget;
 }
 
 export interface WorkflowErrorEventPayload {
@@ -37,9 +34,6 @@ export interface WorkflowErrorEventPayload {
   completedAt: string;
   status: WorkflowTerminalErrorStatus;
   error: Error;
-  repoFullName?: string;
-  installationId?: number;
-  reactionTarget?: WorkflowRunReactionTarget;
 }
 
 export interface AppContextTerminalEventMap {

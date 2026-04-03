@@ -545,7 +545,6 @@ async function startGitHubApp(
   const commentCalls: string[] = [];
   const envs: NodeJS.ProcessEnv[] = [];
   const installationTokenCalls: string[] = [];
-  const queuedRunRecords = new Map<string, ActiveWorkflowRunRecord>();
   const reactionCalls: string[] = [];
   const started: string[] = [];
   const terminalListeners = new Map<string, AppContextTerminalListeners>();
@@ -634,9 +633,7 @@ async function startGitHubApp(
         if (options?.createQueuedRunError) {
           throw options.createQueuedRunError;
         }
-        const record = createQueuedRunRecord(`run-${runCount + 1}`, context);
-        queuedRunRecords.set(record.runId, record);
-        return record;
+        return createQueuedRunRecord(`run-${runCount + 1}`, context);
       },
       subscribeTerminalEvents(runId, listeners) {
         terminalListeners.set(runId, {
@@ -691,22 +688,10 @@ async function startGitHubApp(
     commands,
     commentCalls,
     emitTrackedCompleted(runId: string, payload: WorkflowCompletedEventPayload) {
-      const queuedRun = queuedRunRecords.get(runId);
-      return emitTrackedCompleted(terminalListeners, runId, {
-        ...payload,
-        repoFullName: payload.repoFullName ?? queuedRun?.repoFullName,
-        installationId: payload.installationId ?? queuedRun?.installationId,
-        reactionTarget: payload.reactionTarget ?? queuedRun?.reactionTarget
-      });
+      return emitTrackedCompleted(terminalListeners, runId, payload);
     },
     emitTrackedError(runId: string, payload: WorkflowErrorEventPayload) {
-      const queuedRun = queuedRunRecords.get(runId);
-      return emitTrackedError(terminalListeners, runId, {
-        ...payload,
-        repoFullName: payload.repoFullName ?? queuedRun?.repoFullName,
-        installationId: payload.installationId ?? queuedRun?.installationId,
-        reactionTarget: payload.reactionTarget ?? queuedRun?.reactionTarget
-      });
+      return emitTrackedError(terminalListeners, runId, payload);
     },
     envs,
     installationTokenCalls,

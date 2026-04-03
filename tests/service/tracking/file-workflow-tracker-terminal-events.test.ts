@@ -44,13 +44,7 @@ test("fileWorkflowTracker emits one completed event for terminal success", async
       matchedTrigger: "issue:open",
       executorName: "codex",
       completedAt,
-      status: "succeeded",
-      repoFullName: "acme/demo",
-      installationId: 42,
-      reactionTarget: {
-        kind: "issue_comment",
-        subjectId: 99
-      }
+      status: "succeeded"
     }
   ]);
 });
@@ -290,11 +284,7 @@ async function createQueuedRun(tracker: WorkflowTracker) {
       executorName: "codex",
       repoFullName: "acme/demo",
       actorLogin: "octocat",
-      installationId: 42,
-      reactionTarget: {
-        kind: "issue_comment",
-        subjectId: 99
-      }
+      installationId: 42
     },
     ""
   );

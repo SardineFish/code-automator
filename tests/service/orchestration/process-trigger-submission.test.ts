@@ -48,9 +48,7 @@ test("processTriggerSubmission launches the first matching workflow with matched
           issueId: "7",
           repo: "acme/demo",
           user: "octocat",
-          installationId: 42,
-          githubReactionKind: "issue_comment",
-          githubReactionSubjectId: 99
+          installationId: 42
         },
         env: { GH_TOKEN: "token-1", SHARED: "trigger" }
       },
@@ -130,11 +128,7 @@ test("processTriggerSubmission launches the first matching workflow with matched
     executorName: "codex",
     repoFullName: "acme/demo",
     actorLogin: "octocat",
-    installationId: 42,
-    reactionTarget: {
-      kind: "issue_comment",
-      subjectId: 99
-    }
+    installationId: 42
   });
   assert.deepEqual(subscribedListenerCounts, ["1:1"]);
   await waitForCondition(() => running.length === 1);
