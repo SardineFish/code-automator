@@ -184,7 +184,7 @@ export async function listCommentReactions(options: {
   repoFullName: string;
   subjectId: number;
   token: string;
-  kind: "issue_comment" | "pull_request_review_comment";
+  kind: "issue" | "issue_comment" | "pull_request_review_comment";
 }): Promise<GitHubReaction[]> {
   const response = await fetch(`${getReactionEndpoint(options.repoFullName, options.subjectId, options.kind)}?per_page=100`, {
     headers: createGitHubApiHeaders(options.token)

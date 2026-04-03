@@ -309,7 +309,7 @@ async function isAlreadyHandledDelivery(
   token: string,
   botHandle: string
 ): Promise<boolean> {
-  if (!reactionTarget || reactionTarget.kind === "issue") {
+  if (!reactionTarget) {
     return false;
   }
 

@@ -144,6 +144,17 @@ test("createGitHubRedeliveryWorker skips issue comments that already have the bo
   assert.deepEqual(harness.redeliveryCalls, []);
 });
 
+test("createGitHubRedeliveryWorker skips issue openings that already have the bot eyes reaction", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createIssueOpenedDetail(),
+    reactions: [{ content: "eyes", user: { login: "github-agent-orchestrator[bot]", type: "Bot" } }]
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, []);
+});
+
 test("createGitHubRedeliveryWorker skips PR review comments that already have the bot eyes reaction", async (t) => {
   const harness = await createWorkerHarness(t, {
     detail: createReviewCommentDetail("needs work"),
@@ -301,7 +312,11 @@ async function createWorkerHarness(
       });
     }
 
-    if (/\/issues\/comments\/\d+\/reactions\?per_page=100$/.test(url) || /\/pulls\/comments\/\d+\/reactions\?per_page=100$/.test(url)) {
+    if (
+      /\/issues\/\d+\/reactions\?per_page=100$/.test(url) ||
+      /\/issues\/comments\/\d+\/reactions\?per_page=100$/.test(url) ||
+      /\/pulls\/comments\/\d+\/reactions\?per_page=100$/.test(url)
+    ) {
       return new Response(JSON.stringify(options.reactions ?? []), {
         status: 200,
         headers: { "content-type": "application/json" }
