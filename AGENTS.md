@@ -14,6 +14,7 @@ Start here before changing code. This file is the stable table of contents for b
 
 ## Working Rules
 
+- IMPORTANT: Keep all developer documentation and code in en-US English, including comments, identifiers, and commit or review text added for the repository.
 - Keep root documentation limited to `README.md`, `AGENTS.md`, and `ARCHITECTURE.md`.
 - Put stable knowledge in `docs/`, not in issue comments or ad hoc notes.
 - Keep stable design and product decisions in `docs/`.
