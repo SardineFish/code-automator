@@ -1,29 +1,16 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { getWhitelistRejectionReason } from "../../service/orchestration/check-whitelist.js";
 import { verifyWebhookSignature } from "../../service/security/verify-webhook-signature.js";
 import type { AppContext } from "../../types/runtime.js";
-import {
-  formatRuntimeErrorComment,
-  formatWorkflowTerminalErrorComment,
-  getReportTarget
-} from "./github-provider-reporting.js";
-import type { GitHubReactionTarget } from "./github-utils.js";
+import { formatRuntimeErrorComment, formatWorkflowTerminalErrorComment } from "./github-provider-reporting.js";
+import { readGitHubProviderEvent } from "./github-provider-event.js";
 import {
   addGitHubReaction,
   addThreadComment,
   getHeader,
   getInstallationTokenProvider,
-  mapReviewState,
-  parseCommentMention,
-  parseIssueMention,
   readBody,
-  readGate,
-  readId,
-  readInteger,
-  readObject,
   readPayload,
-  readString,
   requireEnv,
   respond
 } from "./github-utils.js";
@@ -35,7 +22,7 @@ import { resolveGitHubProviderConfig } from "./github-config.js";
  * Supported canonical triggers:
  * - issue:open
  * - issue:close
- *   Emitted for GitHub "issues" events when action === "opened".
+ *   Emitted for GitHub "issues" events when action === "opened" or "closed".
  * - issue:command:plan
  * - issue:command:approve
  * - issue:command:reset
@@ -67,73 +54,77 @@ export async function githubProvider(
   response: ServerResponse,
   context: AppContext
 ): Promise<void> {
-  // Read provider-owned config from the shared app context.
   const github = resolveGitHubProviderConfig(context.config.gh);
 
-  // Enforce the basic HTTP contract before reading the body.
   if (request.method !== "POST") {
     response.setHeader("Allow", "POST");
     return respond(response, 405, "Method Not Allowed");
   }
 
-  // Parse the raw request first so signature verification uses the exact bytes GitHub sent.
   const body = await readBody(request, response);
+
   if (!body) {
     return;
   }
+
   if (!verifyWebhookSignature(requireEnv(context.env, "GITHUB_WEBHOOK_SECRET"), body, getHeader(request, "x-hub-signature-256"))) {
     return respond(response, 401, "Invalid signature");
   }
 
   const eventName = getHeader(request, "x-github-event");
+
   if (!eventName) {
     return respond(response, 400, "Missing X-GitHub-Event header");
   }
 
-  // Decode the JSON payload once the request is authenticated.
   const payload = readPayload(body, response);
+
   if (!payload) {
     return;
   }
 
-  // Apply generic provider gates before deciding which workflow triggers to emit.
-  const gate = readGate(payload);
-  const requestLog = context.log.child({ eventName, actorLogin: gate?.actorLogin, repo: gate?.repoFullName });
-  if (!gate) {
-    requestLog.info({ message: "ignored delivery without gate context", reason: "missing_gate_context" });
-    return respond(response, 202, "Ignored");
-  }
-  const rejectionReason = getWhitelistRejectionReason(github.whitelist, gate);
-  if (rejectionReason) {
-    requestLog.info({ message: "ignored delivery rejected by whitelist", reason: rejectionReason });
-    return respond(response, 202, "Ignored");
-  }
-  const gateContext = gate;
+  const providerEvent = readGitHubProviderEvent(eventName, payload, github);
+  const gateContext = providerEvent.status === "accepted" ? providerEvent.event.gate : providerEvent.gate;
+  const requestLog = context.log.child({ eventName, actorLogin: gateContext?.actorLogin, repo: gateContext?.repoFullName });
 
-  const action = readString(payload, "action");
-  const issue = readObject(payload, "issue");
-  const comment = readObject(payload, "comment");
-  const review = readObject(payload, "review");
-  const pullRequest = readObject(payload, "pull_request");
+  if (providerEvent.status === "ignored") {
+    if (providerEvent.reason === "missing_gate_context") {
+      requestLog.info({ message: "ignored delivery without gate context", reason: providerEvent.reason });
+      return respond(response, 202, "Ignored");
+    }
+
+    if (providerEvent.reason === "repo_not_whitelisted" || providerEvent.reason === "actor_not_whitelisted") {
+      requestLog.info({ message: "ignored delivery rejected by whitelist", reason: providerEvent.reason });
+      return respond(response, 202, "Ignored");
+    }
+
+    requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: providerEvent.reason });
+    return respond(response, 202, "Accepted");
+  }
+
+  const providerPayload = providerEvent.event;
   const deliveryId = getHeader(request, "x-github-delivery");
-  const user = gateContext.actorLogin;
-  const repo = gateContext.repoFullName;
+  const user = providerPayload.gate.actorLogin;
+  const repo = providerPayload.gate.repoFullName;
   const privateKeyPath = requireEnv(context.env, "GITHUB_APP_PRIVATE_KEY_PATH");
   const installationTokenProvider = getInstallationTokenProvider(privateKeyPath);
   const installationToken = await installationTokenProvider.createInstallationToken(
     github.clientId,
-    gateContext.installationId
+    providerPayload.gate.installationId
   );
   const triggerEnv = { GH_TOKEN: installationToken };
-  const reportTarget = getReportTarget(eventName, issue, pullRequest);
-  let reactionTarget: GitHubReactionTarget | undefined;
+  const reactionTarget = providerPayload.reactionTarget;
+  const reportTarget = {
+    subjectId: providerPayload.threadTarget.number,
+    kind: providerPayload.threadTarget.kind
+  };
 
   function triggerWorkflow(name: Parameters<AppContext["trigger"]>[0], input: Record<string, unknown>): void {
     context.trigger(name, {
       in: {
         ...input,
         ...(deliveryId ? { deliveryId } : {}),
-        installationId: gateContext.installationId
+        installationId: providerPayload.gate.installationId
       },
       env: triggerEnv
     });
@@ -149,7 +140,7 @@ export async function githubProvider(
         reactionToken ??
         (await installationTokenProvider.createInstallationToken(
           github.clientId,
-          gateContext.installationId
+          providerPayload.gate.installationId
         ));
       await addGitHubReaction({
         repoFullName: repo,
@@ -166,155 +157,79 @@ export async function githubProvider(
     }
   }
 
-  if (reportTarget) {
-    context.on("error", async (event) => {
-      try {
-        const reportToken = await installationTokenProvider.createInstallationToken(
-          github.clientId,
-          gateContext.installationId
-        );
-        await addWorkflowCompletionReaction(event.runId, reportToken);
-        await addThreadComment({
-          repoFullName: repo,
-          subjectId: reportTarget.subjectId,
-          body: formatWorkflowTerminalErrorComment(event),
-          token: reportToken,
-          kind: reportTarget.kind
-        });
-      } catch (reportError) {
-        requestLog.warn({
-          message: "failed to post GitHub workflow terminal error comment",
-          runId: event.runId,
-          errorMessage: reportError instanceof Error ? reportError.message : "Unknown GitHub reporting error."
-        });
-      }
-    });
-  }
+  context.on("error", async (event) => {
+    try {
+      const reportToken = await installationTokenProvider.createInstallationToken(
+        github.clientId,
+        providerPayload.gate.installationId
+      );
+      await addWorkflowCompletionReaction(event.runId, reportToken);
+      await addThreadComment({
+        repoFullName: repo,
+        subjectId: reportTarget.subjectId,
+        body: formatWorkflowTerminalErrorComment(event),
+        token: reportToken,
+        kind: reportTarget.kind
+      });
+    } catch (reportError) {
+      requestLog.warn({
+        message: "failed to post GitHub workflow terminal error comment",
+        runId: event.runId,
+        errorMessage: reportError instanceof Error ? reportError.message : "Unknown GitHub reporting error."
+      });
+    }
+  });
 
   try {
-    // Route the GitHub event to the smallest set of canonical workflow triggers.
-    if (eventName === "issues" && (action === "opened" || action === "closed")) {
-      const issueId = readId(issue);
-      if (!issueId) {
-        return respond(response, 202, "Accepted");
-      }
-      const subjectId = readInteger(issue ?? {}, "number");
-      if (subjectId !== undefined) {
-        reactionTarget = { subjectId, kind: "issue" };
-      }
-
-      const issueEvent = action === "closed" ? "issue:close" : "issue:open";
+    if (providerPayload.kind === "issue_opened" || providerPayload.kind === "issue_closed") {
+      const issueEvent = providerPayload.kind === "issue_closed" ? "issue:close" : "issue:open";
 
       triggerWorkflow(issueEvent, {
         event: issueEvent,
         user,
         repo,
-        issueId,
-        content: readString(issue ?? {}, "body")
+        issueId: providerPayload.issueId,
+        content: providerPayload.body
       });
-    } else if (eventName === "issue_comment" && action === "created") {
-      const issueId = readId(issue);
-      if (!issueId || !comment) {
-        return respond(response, 202, "Accepted");
-      }
-
-      const content = readString(comment, "body") ?? "";
-      const commentId = readInteger(comment, "id");
-      if (readObject(issue ?? {}, "pull_request")) {
-        if (commentId !== undefined) {
-          reactionTarget = { subjectId: commentId, kind: "issue_comment" };
-        }
-        const mention = parseCommentMention(content, github.botHandle);
-
-        if (mention.hasMention) {
-          triggerWorkflow("pr:at", {
-            event: "pr:at",
-            user,
-            repo,
-            prId: issueId,
-            content: mention.content
-          });
-        }
-
-        // Issue comments on pull requests map directly to PR comment workflows.
-        triggerWorkflow("pr:comment", {
-          event: "pr:comment",
+    } else if (providerPayload.kind === "issue_comment") {
+      if (providerPayload.mention.command) {
+        triggerWorkflow(`issue:command:${providerPayload.mention.command}`, {
+          event: `issue:command:${providerPayload.mention.command}`,
           user,
           repo,
-          prId: issueId,
-          content
+          issueId: providerPayload.issueId,
+          content: providerPayload.mention.content,
+          command: providerPayload.mention.command
         });
-      } else {
-        if (readString(issue ?? {}, "state") === "closed") {
-          requestLog.info({
-            message: "processed webhook delivery",
-            status: "ignored",
-            reason: "issue_closed"
-          });
-          return respond(response, 202, "Accepted");
-        }
+      }
 
-        if (commentId !== undefined) {
-          reactionTarget = { subjectId: commentId, kind: "issue_comment" };
-        }
-        const mention = parseIssueMention(content, github.botHandle, github.requireMention);
-        if (mention.command) {
-          // Command workflows stay more specific than mention or generic comment handlers.
-          triggerWorkflow(`issue:command:${mention.command}`, {
-            event: `issue:command:${mention.command}`,
-            user,
-            repo,
-            issueId,
-            content: mention.content,
-            command: mention.command
-          });
-        }
-
-        if (mention.hasMention) {
-          triggerWorkflow("issue:at", {
-            event: "issue:at",
-            user,
-            repo,
-            issueId,
-            content: mention.content,
-            command: mention.command
-          });
-        }
-
-        if (!mention.hasMention && github.requireMention) {
-          requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "not_mentioned" });
-          return respond(response, 202, "Accepted");
-        }
-
-        // Generic issue-comment workflows can still win later in YAML order.
-        triggerWorkflow("issue:comment", {
-          event: "issue:comment",
+      if (providerPayload.mention.hasMention) {
+        triggerWorkflow("issue:at", {
+          event: "issue:at",
           user,
           repo,
-          issueId,
-          content: mention.content,
-          command: mention.command
+          issueId: providerPayload.issueId,
+          content: providerPayload.mention.content,
+          command: providerPayload.mention.command
         });
       }
-    } else if (eventName === "pull_request_review_comment" && action === "created") {
-      const prId = readId(pullRequest);
-      if (!prId || !comment) {
-        return respond(response, 202, "Accepted");
-      }
-      const content = readString(comment, "body");
-      const commentId = readInteger(comment, "id");
-      if (commentId !== undefined) {
-        reactionTarget = { subjectId: commentId, kind: "pull_request_review_comment" };
-      }
-      const mention = parseCommentMention(content ?? "", github.botHandle);
 
-      if (mention.hasMention) {
+      triggerWorkflow("issue:comment", {
+        event: "issue:comment",
+        user,
+        repo,
+        issueId: providerPayload.issueId,
+        content: providerPayload.mention.content,
+        command: providerPayload.mention.command
+      });
+    } else if (providerPayload.kind === "pr_issue_comment" || providerPayload.kind === "pr_review_comment") {
+      if (providerPayload.mention.hasMention) {
         triggerWorkflow("pr:at", {
           event: "pr:at",
           user,
           repo,
-          prId,
-          content: mention.content
+          prId: providerPayload.prId,
+          content: providerPayload.mention.content
         });
       }
 
@@ -322,61 +237,26 @@ export async function githubProvider(
         event: "pr:comment",
         user,
         repo,
-        prId,
-        content
+        prId: providerPayload.prId,
+        content: providerPayload.body
       });
-    } else if (eventName === "pull_request_review") {
-      const prId = readId(pullRequest);
-      if (!prId || !review) {
-        return respond(response, 202, "Accepted");
-      }
-      const reviewId = readInteger(review, "id");
-      const reviewNodeId = readString(review, "node_id");
-      if (reviewId !== undefined && reviewNodeId) {
-        reactionTarget = {
-          subjectId: reviewId,
-          kind: "pull_request_review",
-          nodeId: reviewNodeId
-        };
-      }
-
-      const reviewState = readString(review, "state");
-      if (reviewState === "approved" && github.ignoreApprovalReview) {
-        requestLog.info({
-          message: "processed webhook delivery",
-          status: "ignored",
-          reason: "approved_review_ignored"
-        });
-        return respond(response, 202, "Accepted");
-      }
-
-      const prReview = mapReviewState(reviewState);
-
+    } else {
       triggerWorkflow("pr:review", {
         event: "pr:review",
         user,
         repo,
-        prId,
-        prReview,
-        content: readString(review, "body")?.trim() || prReview || reviewState
+        prId: providerPayload.prId,
+        prReview: providerPayload.prReview,
+        content: providerPayload.content
       });
-    } else {
-      requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "unsupported_event" });
-      return respond(response, 202, "Accepted");
     }
 
     if (reactionTarget) {
       context.on("completed", async (event) => {
         await addWorkflowCompletionReaction(event.runId);
       });
-      if (!reportTarget) {
-        context.on("error", async (event) => {
-          await addWorkflowCompletionReaction(event.runId);
-        });
-      }
     }
 
-    // The shared engine handles workflow selection, execution, and tracking.
     const result = await context.submit();
 
     if (result.status === "matched" && reactionTarget) {
@@ -403,21 +283,19 @@ export async function githubProvider(
       errorMessage: error instanceof Error ? error.message : "Unknown GitHub provider error."
     });
 
-    if (reportTarget) {
-      try {
-        await addThreadComment({
-          repoFullName: repo,
-          subjectId: reportTarget.subjectId,
-          body: formatRuntimeErrorComment(error),
-          token: installationToken,
-          kind: reportTarget.kind
-        });
-      } catch (reportError) {
-        requestLog.warn({
-          message: "failed to post GitHub runtime error comment",
-          errorMessage: reportError instanceof Error ? reportError.message : "Unknown GitHub reporting error."
-        });
-      }
+    try {
+      await addThreadComment({
+        repoFullName: repo,
+        subjectId: reportTarget.subjectId,
+        body: formatRuntimeErrorComment(error),
+        token: installationToken,
+        kind: reportTarget.kind
+      });
+    } catch (reportError) {
+      requestLog.warn({
+        message: "failed to post GitHub runtime error comment",
+        errorMessage: reportError instanceof Error ? reportError.message : "Unknown GitHub reporting error."
+      });
     }
 
     respond(response, 500, "Internal Server Error");

@@ -112,6 +112,33 @@ test("createGitHubRedeliveryWorker skips ignored issue comments without a mentio
   assert.deepEqual(harness.redeliveryCalls, []);
 });
 
+test("createGitHubRedeliveryWorker skips approved reviews when ignoreApprovalReview is enabled", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createReviewDetail("ship it", "approved")
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, []);
+});
+
+test("createGitHubRedeliveryWorker retries approved reviews when ignoreApprovalReview is disabled", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createReviewDetail("ship it", "approved"),
+    customizeConfig(config) {
+      if (!config.gh) {
+        throw new Error("Missing test GitHub config.");
+      }
+
+      config.gh.ignoreApprovalReview = false;
+    }
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, ["11"]);
+});
+
 test("createGitHubRedeliveryWorker skips already closed issues", async (t) => {
   const issueHarness = await createWorkerHarness(t, {
     detail: createIssueOpenedDetail(),
@@ -379,6 +406,28 @@ function createReviewCommentDetail(body: string): GitHubAppWebhookDeliveryDetail
       comment: {
         body,
         id: 101
+      }
+    }
+  };
+}
+
+function createReviewDetail(body: string, state: string): GitHubAppWebhookDeliveryDetail {
+  return {
+    ...createDeliverySummary("11", "guid-retry"),
+    eventName: "pull_request_review",
+    payload: {
+      action: "submitted",
+      repository: { full_name: "acme/demo" },
+      sender: { login: "octocat" },
+      installation: { id: 42 },
+      pull_request: {
+        number: 8
+      },
+      review: {
+        id: 202,
+        node_id: "PRR_kwDOdemo202",
+        body,
+        state
       }
     }
   };

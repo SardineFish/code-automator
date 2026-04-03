@@ -1,28 +1,21 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getWhitelistRejectionReason } from "../../service/orchestration/check-whitelist.js";
 import type { TrackingConfig } from "../../types/config.js";
 import type { LogSink } from "../../types/logging.js";
-import type { WebhookGateContext } from "../../types/runtime.js";
 import type {
   GitHubAppWebhookDelivery,
   GitHubAppWebhookDeliveryClient
 } from "./github-redelivery-client.js";
 import { fetchGitHubAppWebhookDeliveryClient } from "./github-redelivery-client.js";
 import type { ResolvedGitHubProviderConfig } from "./github-config.js";
+import { readGitHubProviderEvent } from "./github-provider-event.js";
 import {
-  type GitHubReactionListTarget,
+  type GitHubReactionTarget,
   getGitHubAppJwtProvider,
   getInstallationTokenProvider,
   listCommentReactions,
-  parseIssueMention,
-  readGate,
   readGitHubThreadState,
-  readId,
-  readInteger,
-  readObject,
-  readString,
   requireEnv,
   type GitHubReaction
 } from "./github-utils.js";
@@ -36,21 +29,6 @@ interface GitHubRedeliveryState {
   checkpoint?: string;
   settledGuids: Record<string, string>;
 }
-
-interface GitHubRelevantDelivery {
-  gate: WebhookGateContext;
-  reactionTarget?: GitHubReactionListTarget;
-  threadTarget?: GitHubThreadTarget;
-}
-
-interface GitHubThreadTarget {
-  kind: "issue" | "pull_request";
-  number: number;
-}
-
-type GitHubDeliveryEvaluation =
-  | { gate?: WebhookGateContext; reason: string; status: "ignored" }
-  | { delivery: GitHubRelevantDelivery; status: "relevant" };
 
 export interface GitHubRedeliveryWorker {
   start(): void;
@@ -160,12 +138,11 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
     for (const candidate of candidates) {
       try {
         const detail = await client.getDelivery(jwt, candidate.id);
-        const evaluation = evaluateRedeliveryDelivery(detail.eventName, detail.payload, options.github);
+        const evaluation = readGitHubProviderEvent(detail.eventName, detail.payload, options.github);
 
         if (evaluation.status === "ignored") {
           skippedByProviderFilter += 1;
-          settleGuid(state, candidate.guid, scanStartedAtIso);
-          await saveState(stateFilePath, state);
+          await settleGuidAndSave(state, candidate.guid, scanStartedAtIso);
           log.debug({
             message: "skipped GitHub App webhook delivery by provider filter",
             deliveryId: candidate.id,
@@ -175,40 +152,30 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
           continue;
         }
 
-        const token = await getInstallationToken(evaluation.delivery.gate.installationId);
-        const threadState = evaluation.delivery.threadTarget
-          ? await readGitHubThreadState({
-              repoFullName: evaluation.delivery.gate.repoFullName,
-              subjectId: evaluation.delivery.threadTarget.number,
-              token,
-              kind: evaluation.delivery.threadTarget.kind
-            })
-          : undefined;
+        const event = evaluation.event;
+        const token = await getInstallationToken(event.gate.installationId);
+        const threadState = await readGitHubThreadState({
+          repoFullName: event.gate.repoFullName,
+          subjectId: event.threadTarget.number,
+          token,
+          kind: event.threadTarget.kind
+        });
 
         if (threadState === "closed") {
           skippedByProviderFilter += 1;
-          settleGuid(state, candidate.guid, scanStartedAtIso);
+          await settleGuidAndSave(state, candidate.guid, scanStartedAtIso);
           log.debug({
             message: "skipped GitHub App webhook delivery by provider filter",
             deliveryId: candidate.id,
             guid: candidate.guid,
-            reason: evaluation.delivery.threadTarget?.kind === "pull_request" ? "pull_request_closed" : "issue_closed"
+            reason: event.threadTarget.kind === "pull_request" ? "pull_request_closed" : "issue_closed"
           });
-          await saveState(stateFilePath, state);
           continue;
         }
 
-        if (
-          await isAlreadyHandledDelivery(
-            evaluation.delivery.gate.repoFullName,
-            evaluation.delivery.reactionTarget,
-            token,
-            options.github.botHandle
-          )
-        ) {
+        if (await isAlreadyHandledDelivery(event.gate.repoFullName, event.reactionTarget, token, options.github.botHandle)) {
           skippedAlreadyHandled += 1;
-          settleGuid(state, candidate.guid, scanStartedAtIso);
-          await saveState(stateFilePath, state);
+          await settleGuidAndSave(state, candidate.guid, scanStartedAtIso);
           log.debug({
             message: "skipped GitHub App webhook delivery because already handled",
             deliveryId: candidate.id,
@@ -220,8 +187,7 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
 
         await client.redeliverDelivery(jwt, candidate.id);
         retried += 1;
-        settleGuid(state, candidate.guid, scanStartedAtIso);
-        await saveState(stateFilePath, state);
+        await settleGuidAndSave(state, candidate.guid, scanStartedAtIso);
         log.info({
           message: "retried GitHub App webhook delivery",
           deliveryId: candidate.id,
@@ -261,6 +227,11 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
       const created = installationTokenProvider.createInstallationToken(options.github.clientId, installationId);
       installationTokens.set(installationId, created);
       return created;
+    }
+
+    async function settleGuidAndSave(state: GitHubRedeliveryState, guid: string, settledAt: string): Promise<void> {
+      settleGuid(state, guid, settledAt);
+      await saveState(stateFilePath, state);
     }
   }
 }
@@ -317,11 +288,11 @@ export function getGitHubRedeliveryStateFilePath(stateFile: string): string {
 
 async function isAlreadyHandledDelivery(
   repoFullName: string,
-  reactionTarget: GitHubReactionListTarget | undefined,
+  reactionTarget: GitHubReactionTarget | undefined,
   token: string,
   botHandle: string
 ): Promise<boolean> {
-  if (!reactionTarget) {
+  if (!reactionTarget || reactionTarget.kind === "pull_request_review") {
     return false;
   }
 
@@ -490,128 +461,6 @@ function createEmptyState(): GitHubRedeliveryState {
     version: 1,
     settledGuids: {}
   };
-}
-
-function evaluateRedeliveryDelivery(
-  eventName: string,
-  payload: Record<string, unknown>,
-  github: ResolvedGitHubProviderConfig
-): GitHubDeliveryEvaluation {
-  const gate = readGate(payload);
-
-  if (!gate) {
-    return { status: "ignored", reason: "missing_gate_context" };
-  }
-
-  const rejectionReason = getWhitelistRejectionReason(github.whitelist, gate);
-  if (rejectionReason) {
-    return { status: "ignored", gate, reason: rejectionReason };
-  }
-
-  const action = readString(payload, "action");
-  const issue = readObject(payload, "issue");
-  const comment = readObject(payload, "comment");
-  const review = readObject(payload, "review");
-  const pullRequest = readObject(payload, "pull_request");
-
-  if (eventName === "issues" && action === "opened") {
-    const subjectNumber = readInteger(issue ?? {}, "number");
-
-    if (!readId(issue) || subjectNumber === undefined) {
-      return { status: "ignored", gate, reason: "invalid_delivery" };
-    }
-
-    return {
-      status: "relevant",
-      delivery: {
-        gate,
-        reactionTarget: { subjectId: subjectNumber, kind: "issue" },
-        threadTarget: { number: subjectNumber, kind: "issue" }
-      }
-    };
-  }
-
-  if (eventName === "issue_comment" && action === "created") {
-    const issueId = readId(issue);
-    const subjectNumber = readInteger(issue ?? {}, "number");
-
-    if (!issueId || subjectNumber === undefined || !comment) {
-      return { status: "ignored", gate, reason: "invalid_delivery" };
-    }
-
-    const commentId = readInteger(comment, "id");
-
-    if (readObject(issue ?? {}, "pull_request")) {
-      return {
-        status: "relevant",
-        delivery: {
-          gate,
-          reactionTarget: readReactionTarget(commentId, "issue_comment"),
-          threadTarget: { number: subjectNumber, kind: "pull_request" }
-        }
-      };
-    }
-
-    const content = readString(comment, "body") ?? "";
-    const mention = parseIssueMention(content, github.botHandle, github.requireMention);
-
-    if (!mention.hasMention && github.requireMention) {
-      return { status: "ignored", gate, reason: "not_mentioned" };
-    }
-
-    return {
-      status: "relevant",
-      delivery: {
-        gate,
-        reactionTarget: readReactionTarget(commentId, "issue_comment"),
-        threadTarget: { number: subjectNumber, kind: "issue" }
-      }
-    };
-  }
-
-  if (eventName === "pull_request_review_comment" && action === "created") {
-    const prId = readId(pullRequest);
-    const subjectNumber = readInteger(pullRequest ?? {}, "number");
-
-    if (!prId || subjectNumber === undefined || !comment) {
-      return { status: "ignored", gate, reason: "invalid_delivery" };
-    }
-
-    return {
-      status: "relevant",
-      delivery: {
-        gate,
-        reactionTarget: readReactionTarget(readInteger(comment, "id"), "pull_request_review_comment"),
-        threadTarget: { number: subjectNumber, kind: "pull_request" }
-      }
-    };
-  }
-
-  if (eventName === "pull_request_review") {
-    const prId = readId(pullRequest);
-    const subjectNumber = readInteger(pullRequest ?? {}, "number");
-
-    if (!prId || subjectNumber === undefined || !review) {
-      return { status: "ignored", gate, reason: "invalid_delivery" };
-    }
-
-    return {
-      status: "relevant",
-      delivery: {
-        gate,
-        threadTarget: { number: subjectNumber, kind: "pull_request" }
-      }
-    };
-  }
-
-  return { status: "ignored", gate, reason: "unsupported_event" };
-}
-
-function readReactionTarget(
-  subjectId: number | undefined,
-  kind: GitHubReactionListTarget["kind"]
-): GitHubReactionListTarget | undefined {
-  return subjectId === undefined ? undefined : { subjectId, kind };
 }
 
 function isSuccessfulDelivery(delivery: GitHubAppWebhookDelivery): boolean {

@@ -1,39 +1,4 @@
 import type { WorkflowErrorEventPayload } from "../../types/runtime.js";
-import { readInteger, readObject } from "./github-utils.js";
-
-export interface GitHubReportTarget {
-  subjectId: number;
-  kind: "issue" | "pull_request";
-}
-
-export function getReportTarget(
-  eventName: string,
-  issue: Record<string, unknown> | null,
-  pullRequest: Record<string, unknown> | null
-): GitHubReportTarget | undefined {
-  if (eventName === "issues" || eventName === "issue_comment") {
-    const subjectId = readInteger(issue ?? {}, "number");
-    if (subjectId === undefined) {
-      return undefined;
-    }
-
-    return {
-      subjectId,
-      kind: readObject(issue ?? {}, "pull_request") ? "pull_request" : "issue"
-    };
-  }
-
-  if (eventName === "pull_request_review" || eventName === "pull_request_review_comment") {
-    const subjectId = readInteger(pullRequest ?? {}, "number");
-    if (subjectId === undefined) {
-      return undefined;
-    }
-
-    return { subjectId, kind: "pull_request" };
-  }
-
-  return undefined;
-}
 
 export function formatRuntimeErrorComment(error: unknown): string {
   const fallback = error instanceof Error ? error.message : "Unknown GitHub provider error.";
