@@ -14,7 +14,7 @@ import {
   reviewCommentPayload,
   reviewPayload
 } from "../fixtures/github-webhooks.js";
-import { createNoOpLogSink } from "../fixtures/log-sink.js";
+import { createRecordingLogSink, type RecordedLogEntry } from "../fixtures/log-sink.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
 import type { AppConfig } from "../../src/types/config.js";
 import type { ActiveWorkflowRunRecord, WorkflowRunArtifacts } from "../../src/types/tracking.js";
@@ -232,6 +232,52 @@ test("GitHub provider preserves multi-line PR mention content", async (t) => {
   assert.deepEqual(started, ["codex exec 'At PR 8: review this\nwith more context'"]);
 });
 
+test("GitHub provider ignores approved reviews by default", async (t) => {
+  const { commands, logs, reactionCalls, started, url } = await startGitHubApp(t);
+  const response = await signedRequest(
+    url,
+    reviewPayload("Ship it after CI passes.", "approved"),
+    "pull_request_review"
+  );
+
+  assert.equal(response.status, 202);
+  assert.deepEqual(commands, []);
+  assert.deepEqual(started, []);
+  assert.deepEqual(reactionCalls, []);
+  assert.ok(
+    logs.some(
+      (entry) =>
+        entry.level === "info" &&
+        entry.record.eventName === "pull_request_review" &&
+        entry.record.status === "ignored" &&
+        entry.record.reason === "approved_review_ignored"
+    )
+  );
+});
+
+test("GitHub provider routes approved reviews when ignoreApprovalReview is false", async (t) => {
+  const { commands, reactionCalls, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      if (!config.gh) {
+        throw new Error("Missing test GitHub config.");
+      }
+
+      config.gh.ignoreApprovalReview = false;
+    }
+  });
+  const response = await signedRequest(
+    url,
+    reviewPayload("Ship it after CI passes.", "approved"),
+    "pull_request_review"
+  );
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Review PR 8: Ship it after CI passes.'"]);
+  assert.deepEqual(started, ["codex exec 'Review PR 8: Ship it after CI passes.'"]);
+  assert.deepEqual(reactionCalls, []);
+});
+
 test("GitHub provider routes the documented workflows through the provider app", async (t) => {
   const { commands, commentCalls, envs, reactionCalls, started, url } = await startGitHubApp(t);
   const scenarios = [
@@ -346,10 +392,11 @@ async function startGitHubApp(
   const commands: string[] = [];
   const commentCalls: string[] = [];
   const envs: NodeJS.ProcessEnv[] = [];
+  const logs: RecordedLogEntry[] = [];
   const reactionCalls: string[] = [];
   const started: string[] = [];
   let runCount = 0;
-  const logSink = createNoOpLogSink();
+  const logSink = createRecordingLogSink(logs);
   const originalFetch = global.fetch;
 
   global.fetch = async (input, init) => {
@@ -462,6 +509,7 @@ async function startGitHubApp(
     commands,
     commentCalls,
     envs,
+    logs,
     reactionCalls,
     started,
     url: `http://127.0.0.1:${address.port}${github.url}`

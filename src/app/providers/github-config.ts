@@ -1,7 +1,9 @@
 import { ConfigError } from "../../config/config-error.js";
 import type { GitHubProviderConfig, GitHubRedeliveryConfig, WhitelistConfig } from "../../types/config.js";
 
-export interface ResolvedGitHubProviderConfig extends Omit<GitHubProviderConfig, "redelivery" | "requireMention"> {
+export interface ResolvedGitHubProviderConfig
+  extends Omit<GitHubProviderConfig, "ignoreApprovalReview" | "redelivery" | "requireMention"> {
+  ignoreApprovalReview: boolean;
   requireMention: boolean;
   redelivery: false | GitHubRedeliveryConfig;
 }
@@ -14,6 +16,7 @@ export function resolveGitHubProviderConfig(value: unknown): ResolvedGitHubProvi
     clientId: readNonEmptyString(github.clientId, "gh.clientId"),
     appId: readPositiveInteger(github.appId, "gh.appId"),
     botHandle: readNonEmptyString(github.botHandle, "gh.botHandle"),
+    ignoreApprovalReview: readBoolean(github.ignoreApprovalReview, "gh.ignoreApprovalReview", true),
     requireMention: readBoolean(github.requireMention, "gh.requireMention", true),
     whitelist: readWhitelist(github.whitelist),
     redelivery: readRedelivery(github.redelivery)

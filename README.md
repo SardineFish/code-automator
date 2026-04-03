@@ -62,6 +62,7 @@ gh:
   appId: 123456
   botHandle: coding-automator
   requireMention: true
+  ignoreApprovalReview: true
   whitelist:
     user:
       - octocat
@@ -107,6 +108,7 @@ Relative `tracking` paths resolve from the YAML file location. The config loader
 - Commenting `@<bot-handle> /approve` triggers the implementation workflow.
 - `issue:at` and `pr:at` fire whenever `@<bot-handle>` appears anywhere in an issue or PR comment body.
 - When `gh.requireMention` is `false`, issue comments may match `issue:comment` without a mention, and `/plan` or `/approve` on issues no longer need a leading mention.
+- `gh.ignoreApprovalReview` is optional and defaults to `true`, so approved `pull_request_review` events are ignored unless you explicitly set it to `false`.
 - Workflow matching is first-match-wins, so put command-specific workflows before mention or generic comment workflows.
 
 ## Optional Redelivery Polling

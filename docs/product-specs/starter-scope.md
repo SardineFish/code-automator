@@ -47,7 +47,7 @@ The shipped GitHub workflows are:
 - `pr-review`
   - `on`: `pr:comment`, `pr:review`
   - `use`: `codex`
-  - purpose: react to PR feedback from a whitelisted user
+  - purpose: react to actionable PR feedback from a whitelisted user; approved `pull_request_review` events are ignored by default unless `gh.ignoreApprovalReview` is `false`
 
 The GitHub planning workflow should render a prompt shaped like:
 
@@ -64,6 +64,8 @@ Check issue ${in.issueId}. Handle the user's request: ${in.content}. Do not writ
 By default, the GitHub provider normalizes `@<bot-handle> /plan` and `@<bot-handle> /approve` to issue command triggers. When `gh.requireMention` is `false`, `/plan` and `/approve` on issues also normalize without a leading mention.
 
 The GitHub provider emits `issue:at` and `pr:at` whenever `@<bot-handle>` appears anywhere in an issue or PR comment body.
+
+By default, the GitHub provider ignores approved `pull_request_review` events, even when the review includes a body comment. Operators can set `gh.ignoreApprovalReview: false` to keep routing approved reviews to `pr:review`.
 
 ## Match Precedence
 

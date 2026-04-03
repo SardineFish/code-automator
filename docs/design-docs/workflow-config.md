@@ -23,6 +23,7 @@ gh:
   appId: 123456
   botHandle: coding-automator
   requireMention: true
+  ignoreApprovalReview: true
   redelivery:
     intervalSeconds: 300
     maxPerRun: 20
@@ -83,6 +84,7 @@ workflow:
 - Any other top-level key is provider-owned configuration. The core app preserves those sections and registered providers validate them at startup.
 - The shipped startup wiring currently reads and registers `gh`. Other provider sections are preserved for future startup registration.
 - `gh.requireMention` is optional and defaults to `true`. Set it to `false` to allow issue comments and slash commands on issues without a leading bot mention.
+- `gh.ignoreApprovalReview` is optional and defaults to `true`. When enabled, approved `pull_request_review` events are ignored even if the review includes a body comment. Set it to `false` to keep routing approved reviews to `pr:review`.
 - `gh.redelivery` is optional. Use `false` or omit it to disable background webhook redelivery polling.
 
 ## Provider Runtime Model

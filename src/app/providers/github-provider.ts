@@ -107,9 +107,12 @@ export async function githubProvider(
   const pullRequest = readObject(payload, "pull_request");
   const user = gate.actorLogin;
   const repo = gate.repoFullName;
-  const installationToken = await getInstallationTokenProvider(requireEnv(context.env, "GITHUB_APP_PRIVATE_KEY_PATH"))
-    .createInstallationToken(github.clientId, gate.installationId);
-  const triggerEnv = { GH_TOKEN: installationToken };
+  let installationTokenPromise: Promise<string> | undefined;
+  const getInstallationToken = (): Promise<string> => {
+    installationTokenPromise ??= getInstallationTokenProvider(requireEnv(context.env, "GITHUB_APP_PRIVATE_KEY_PATH"))
+      .createInstallationToken(github.clientId, gate.installationId);
+    return installationTokenPromise;
+  };
   const reportTarget = getReportTarget(eventName, issue, pullRequest);
   let reactionTarget:
     | { subjectId: number; kind: "issue" | "issue_comment" | "pull_request_review_comment" }
@@ -122,6 +125,7 @@ export async function githubProvider(
       if (!issueId) {
         return respond(response, 202, "Accepted");
       }
+      const triggerEnv = { GH_TOKEN: await getInstallationToken() };
 
       context.trigger("issue:open", {
         in: {
@@ -147,6 +151,7 @@ export async function githubProvider(
       const commentId = readInteger(comment, "id");
       if (readObject(issue ?? {}, "pull_request")) {
         const mention = parseCommentMention(content, github.botHandle);
+        const triggerEnv = { GH_TOKEN: await getInstallationToken() };
 
         if (mention.hasMention) {
           context.trigger("pr:at", {
@@ -177,6 +182,12 @@ export async function githubProvider(
         }
       } else {
         const mention = parseIssueMention(content, github.botHandle, github.requireMention);
+        if (!mention.hasMention && github.requireMention) {
+          requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "not_mentioned" });
+          return respond(response, 202, "Accepted");
+        }
+        const triggerEnv = { GH_TOKEN: await getInstallationToken() };
+
         if (mention.command) {
           // Command workflows stay more specific than mention or generic comment handlers.
           context.trigger(`issue:command:${mention.command}`, {
@@ -206,11 +217,6 @@ export async function githubProvider(
           });
         }
 
-        if (!mention.hasMention && github.requireMention) {
-          requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "not_mentioned" });
-          return respond(response, 202, "Accepted");
-        }
-
         // Generic issue-comment workflows can still win later in YAML order.
         context.trigger("issue:comment", {
           in: {
@@ -235,6 +241,7 @@ export async function githubProvider(
       const content = readString(comment, "body");
       const commentId = readInteger(comment, "id");
       const mention = parseCommentMention(content ?? "", github.botHandle);
+      const triggerEnv = { GH_TOKEN: await getInstallationToken() };
 
       if (mention.hasMention) {
         context.trigger("pr:at", {
@@ -269,7 +276,13 @@ export async function githubProvider(
       }
 
       const reviewState = readString(review, "state");
+      if (reviewState === "approved" && github.ignoreApprovalReview) {
+        requestLog.info({ message: "processed webhook delivery", status: "ignored", reason: "approved_review_ignored" });
+        return respond(response, 202, "Accepted");
+      }
+
       const prReview = mapReviewState(reviewState);
+      const triggerEnv = { GH_TOKEN: await getInstallationToken() };
 
       context.trigger("pr:review", {
         in: {
@@ -292,6 +305,7 @@ export async function githubProvider(
 
     if (result.status === "matched" && reactionTarget) {
       try {
+        const installationToken = await getInstallationToken();
         await addCommentReaction({
           repoFullName: repo,
           subjectId: reactionTarget.subjectId,
@@ -317,6 +331,7 @@ export async function githubProvider(
 
     if (reportTarget) {
       try {
+        const installationToken = await getInstallationToken();
         await addThreadComment({
           repoFullName: repo,
           subjectId: reportTarget.subjectId,
