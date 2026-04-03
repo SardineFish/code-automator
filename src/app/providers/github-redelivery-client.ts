@@ -1,7 +1,8 @@
 import { asObject, readInteger, readString } from "./github-utils.js";
+import { parseGitHubDeliveryJson } from "./github-redelivery-json.js";
 
 export interface GitHubAppWebhookDelivery {
-  id: number;
+  id: string;
   guid: string;
   deliveredAt: string;
   redelivery: boolean;
@@ -20,9 +21,9 @@ export interface GitHubAppWebhookDeliveryPage {
 }
 
 export interface GitHubAppWebhookDeliveryClient {
-  getDelivery(jwt: string, deliveryId: number): Promise<GitHubAppWebhookDeliveryDetail>;
+  getDelivery(jwt: string, deliveryId: string): Promise<GitHubAppWebhookDeliveryDetail>;
   listDeliveries(jwt: string, pageUrl?: string): Promise<GitHubAppWebhookDeliveryPage>;
-  redeliverDelivery(jwt: string, deliveryId: number): Promise<void>;
+  redeliverDelivery(jwt: string, deliveryId: string): Promise<void>;
 }
 
 export const fetchGitHubAppWebhookDeliveryClient: GitHubAppWebhookDeliveryClient = {
@@ -35,13 +36,10 @@ export const fetchGitHubAppWebhookDeliveryClient: GitHubAppWebhookDeliveryClient
       const body = await response.text();
       throw new Error(`GitHub webhook delivery detail request failed: ${response.status} ${body}`);
     }
-
-    const payload = normalizeDeliveryDetail((await response.json()) as unknown);
-
+    const payload = normalizeDeliveryDetail(parseGitHubDeliveryJson(await response.text()));
     if (!payload) {
       throw new Error("GitHub webhook delivery detail response was missing required fields.");
     }
-
     return payload;
   },
   async listDeliveries(jwt, pageUrl) {
@@ -53,9 +51,7 @@ export const fetchGitHubAppWebhookDeliveryClient: GitHubAppWebhookDeliveryClient
       const body = await response.text();
       throw new Error(`GitHub webhook delivery list request failed: ${response.status} ${body}`);
     }
-
-    const payload = (await response.json()) as unknown;
-
+    const payload = parseGitHubDeliveryJson(await response.text());
     if (!Array.isArray(payload)) {
       throw new Error("GitHub webhook delivery list response did not return an array.");
     }
@@ -85,12 +81,10 @@ export const fetchGitHubAppWebhookDeliveryClient: GitHubAppWebhookDeliveryClient
 
 function normalizeDelivery(value: unknown): GitHubAppWebhookDelivery | null {
   const delivery = asObject(value);
-
   if (!delivery) {
     return null;
   }
-
-  const id = readInteger(delivery, "id");
+  const id = readString(delivery, "id");
   const guid = readString(delivery, "guid");
   const deliveredAt = readString(delivery, "delivered_at");
 
