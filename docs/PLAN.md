@@ -179,6 +179,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Resolve top-level include paths from the YAML config file and nested include paths from the including prompt file while preserving later `${in.*}` rendering.
 - Add focused config-loader coverage plus operator docs for nested includes, missing files, and include cycles.
 
+### Plan 28: Ignore PR review comments attached to a submitted review [done]
+
+- Keep the duplication fix provider-owned by ignoring `pull_request_review_comment` deliveries that include `comment.pull_request_review_id`.
+- Extend provider and redelivery regression coverage so standalone review comments still route while attached inline review comments no longer trigger separate workflows or mention handling.
+- Update operator docs to clarify that inline review comments bundled into a submitted review are handled only through the submitted `pull_request_review` event.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

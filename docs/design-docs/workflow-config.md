@@ -98,6 +98,7 @@ workflow:
 - The shipped startup wiring currently reads and registers `gh`. Other provider sections are preserved for future startup registration.
 - `gh.requireMention` is optional and defaults to `true`. Set it to `false` to allow issue comments and slash commands on issues without a leading bot mention.
 - `gh.ignoreApprovalReview` is optional and defaults to `true`. When enabled, approved `pull_request_review` events are ignored instead of emitting `pr:review`.
+- Inline `pull_request_review_comment` deliveries with `comment.pull_request_review_id` are ignored by the GitHub provider, so only standalone PR review comments emit `pr:comment` or `pr:at`.
 - `gh.redelivery` is optional. Use `false` or omit it to disable background webhook redelivery polling.
 
 ## Provider Runtime Model

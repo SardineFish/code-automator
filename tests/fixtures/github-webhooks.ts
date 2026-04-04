@@ -70,7 +70,7 @@ export function issueCommentPayload(
   };
 }
 
-export function reviewCommentPayload(body: string) {
+export function reviewCommentPayload(body: string, options?: { pullRequestReviewId?: number }) {
   return {
     action: "created",
     repository: baseRepository,
@@ -86,6 +86,9 @@ export function reviewCommentPayload(body: string) {
     comment: {
       id: 101,
       body,
+      ...(options?.pullRequestReviewId === undefined
+        ? {}
+        : { pull_request_review_id: options.pullRequestReviewId }),
       html_url: "https://github.com/acme/demo/pull/8#discussion_r101"
     }
   };

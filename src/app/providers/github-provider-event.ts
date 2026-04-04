@@ -222,6 +222,10 @@ export function readGitHubProviderEvent(
       return { status: "ignored", gate, reason: "invalid_delivery" };
     }
 
+    if (readInteger(comment, "pull_request_review_id") !== undefined) {
+      return { status: "ignored", gate, reason: "review_comment_attached_to_review" };
+    }
+
     const body = readString(comment, "body") ?? "";
     const commentId = readInteger(comment, "id");
 

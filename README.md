@@ -291,6 +291,7 @@ The redelivery worker stores its checkpoint next to the tracked run artifacts un
 - The current GitHub provider keeps `in` intentionally small. It emits `event`, `user`, `repo`, and when relevant `issueId`, `prId`, `content`, `prReview`, and `command`.
 - For PR-scoped workflows, the GitHub provider populates `issueId` from GitHub's `closingIssuesReferences` result when GitHub resolves a linked issue for that PR.
 - The current GitHub provider emits `issue:at` and `pr:at` when the bot handle appears in issue or PR comments.
+- Inline `pull_request_review_comment` deliveries with `comment.pull_request_review_id` are treated as part of the submitted review and do not emit standalone `pr:comment` or `pr:at` triggers.
 - `gh.requireMention` defaults to `true`. Set it to `false` if you want `/plan` and `/approve` to work on issues without a leading bot mention.
 - Closed issues do not dispatch normal issue-comment or slash-command workflows.
 - `gh.ignoreApprovalReview` defaults to `true`. Set it to `false` if approved PR reviews should still trigger `pr:review`.

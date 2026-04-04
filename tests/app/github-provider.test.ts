@@ -293,6 +293,32 @@ test("GitHub provider emits pr:at for mentioned PR comments and review comments"
   assert.deepEqual(started, scenarios.map((scenario) => scenario.expectedCommand));
 });
 
+test("GitHub provider ignores PR review comments attached to a submitted review", async (t) => {
+  const { commands, reactionCalls, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      config.workflow = [
+        {
+          name: "pr-at",
+          on: ["pr:at"],
+          use: "codex",
+          prompt: "At PR ${in.prId}: ${in.content}"
+        },
+        ...config.workflow
+      ];
+    }
+  });
+  const response = await signedRequest(
+    url,
+    reviewCommentPayload("please @github-agent-orchestrator review", { pullRequestReviewId: 202 }),
+    "pull_request_review_comment"
+  );
+
+  assert.equal(response.status, 202);
+  assert.deepEqual(commands, []);
+  assert.deepEqual(started, []);
+  assert.deepEqual(reactionCalls, []);
+});
+
 test("GitHub provider reuses the linked issue workspace key for PR comment and review workflows", async (t) => {
   const { commands, linkedIssueCalls, reusableWorkspaceCalls, started, startedCwds, url } = await startGitHubApp(t, {
     linkedIssueIds: {
@@ -420,6 +446,23 @@ test("GitHub provider keeps changes-requested reviews actionable", async (t) => 
   const response = await signedRequest(url, reviewPayload("", "changes_requested"), "pull_request_review");
 
   assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Review PR 8: request-changes'"]);
+  assert.deepEqual(started, ["codex exec 'Review PR 8: request-changes'"]);
+  assert.deepEqual(reactionCalls, ["POST https://api.github.com/graphql EYES PRR_kwDOdemo202"]);
+});
+
+test("GitHub provider routes only the submitted review for inline comments attached to that review", async (t) => {
+  const { commands, reactionCalls, started, url } = await startGitHubApp(t);
+  const attachedCommentResponse = await signedRequest(
+    url,
+    reviewCommentPayload("needs work", { pullRequestReviewId: 202 }),
+    "pull_request_review_comment"
+  );
+  const reviewResponse = await signedRequest(url, reviewPayload("", "changes_requested"), "pull_request_review");
+
+  assert.equal(attachedCommentResponse.status, 202);
+  assert.equal(reviewResponse.status, 202);
   await waitForCondition(() => started.length === 1);
   assert.deepEqual(commands, ["codex exec 'Review PR 8: request-changes'"]);
   assert.deepEqual(started, ["codex exec 'Review PR 8: request-changes'"]);

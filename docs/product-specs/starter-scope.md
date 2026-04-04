@@ -65,6 +65,8 @@ By default, the GitHub provider normalizes `@<bot-handle> /plan` and `@<bot-hand
 
 The GitHub provider emits `issue:at` and `pr:at` whenever `@<bot-handle>` appears anywhere in an issue or PR comment body.
 
+Inline `pull_request_review_comment` deliveries that include `comment.pull_request_review_id` are treated as part of the submitted review, so they do not emit standalone `pr:comment` or `pr:at` triggers.
+
 By default, the GitHub provider ignores approved `pull_request_review` events, even when the review includes a body comment. Set `gh.ignoreApprovalReview: false` to keep routing approved reviews to `pr:review`.
 
 ## Match Precedence

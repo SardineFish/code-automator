@@ -132,6 +132,24 @@ test("readGitHubProviderEvent accepts PR comments from issue-comment and review-
   assert.equal(prReviewComment.event.body, "needs work");
 });
 
+test("readGitHubProviderEvent ignores PR review comments attached to a submitted review", () => {
+  const result = readGitHubProviderEvent(
+    "pull_request_review_comment",
+    reviewCommentPayload("please @github-agent-orchestrator review", { pullRequestReviewId: 202 }),
+    createGitHubConfig()
+  );
+
+  assert.deepEqual(result, {
+    status: "ignored",
+    gate: {
+      repoFullName: "acme/demo",
+      actorLogin: "octocat",
+      installationId: 42
+    },
+    reason: "review_comment_attached_to_review"
+  });
+});
+
 test("readGitHubProviderEvent ignores approved reviews by default and accepts them when enabled", () => {
   const ignored = readGitHubProviderEvent("pull_request_review", reviewPayload("ship it", "approved"), createGitHubConfig());
   const accepted = readGitHubProviderEvent(

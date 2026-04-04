@@ -122,6 +122,26 @@ test("createGitHubRedeliveryWorker skips approved reviews when ignoreApprovalRev
   assert.deepEqual(harness.redeliveryCalls, []);
 });
 
+test("createGitHubRedeliveryWorker skips review comments attached to a submitted review", async (t) => {
+  const records: CapturedLogRecord[] = [];
+  const harness = await createWorkerHarness(t, {
+    detail: createReviewCommentDetail("please @github-agent-orchestrator review", { pullRequestReviewId: 202 }),
+    logSink: createMemoryLogSink(records)
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, []);
+  assert.ok(
+    records.some(
+      (record) =>
+        record.level === "debug" &&
+        record.message === "skipped GitHub App webhook delivery by provider filter" &&
+        record.reason === "review_comment_attached_to_review"
+    )
+  );
+});
+
 test("createGitHubRedeliveryWorker retries approved reviews when ignoreApprovalReview is disabled", async (t) => {
   const harness = await createWorkerHarness(t, {
     detail: createReviewDetail("ship it", "approved"),
@@ -391,7 +411,10 @@ function createIssueCommentDetail(
   };
 }
 
-function createReviewCommentDetail(body: string): GitHubAppWebhookDeliveryDetail {
+function createReviewCommentDetail(
+  body: string,
+  options?: { pullRequestReviewId?: number }
+): GitHubAppWebhookDeliveryDetail {
   return {
     ...createDeliverySummary("11", "guid-retry"),
     eventName: "pull_request_review_comment",
@@ -405,7 +428,10 @@ function createReviewCommentDetail(body: string): GitHubAppWebhookDeliveryDetail
       },
       comment: {
         body,
-        id: 101
+        id: 101,
+        ...(options?.pullRequestReviewId === undefined
+          ? {}
+          : { pull_request_review_id: options.pullRequestReviewId })
       }
     }
   };
