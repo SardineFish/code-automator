@@ -221,6 +221,11 @@ This file defines the implementation order for the whole Coding Automator projec
 - Replace the public GitHub redelivery service creator with a direct app service handler export so startup wiring can register it without a wrapper.
 - Keep the service logic provider-owned while preserving the same worker startup and shutdown behavior.
 - Update focused service coverage to exercise the direct handler path with an injected worker stub.
+### Plan 35: Shared outbound fetch retry and config consolidation [done]
+
+- Move shared outbound provider fetch settings under optional top-level `fetch` config with `proxy` and `maxRetry`.
+- Retry thrown outbound network failures in the shared `fetchHelper()` with a default retry budget of `3` while keeping HTTP response handling at the existing provider call sites.
+- Update regression coverage and operator docs so the new fetch config shape and retry behavior stay documented and locked in.
 
 ## Definition Of Done For Each Plan
 

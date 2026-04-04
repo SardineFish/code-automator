@@ -13,7 +13,9 @@ logging:
 tracking:
   stateFile: workflow-state.json
   logFile: workflow-runs.jsonl
-proxy: socks5://proxy.internal:1080
+fetch:
+  proxy: socks5://proxy.internal:1080
+  maxRetry: 3
 workspace:
   enabled: false
   baseDir: /var/lib/coding-automator/workspaces
@@ -90,7 +92,9 @@ workflow:
 - `server`: listener host and port. Provider routes are declared inside provider sections such as `gh.url`.
 - `logging`: runtime log level. Allowed values are `debug`, `info`, `warn`, and `error`. The default is `info`.
 - `tracking`: persistent workflow state and append-only results log paths. Relative paths resolve from the YAML config file directory.
-- `proxy`: optional outbound proxy URI for shared provider HTTP traffic. Supported schemes are `http`, `https`, and `socks5`.
+- `fetch`: optional shared outbound fetch settings for provider HTTP traffic.
+- `fetch.proxy`: optional outbound proxy URI. Supported schemes are `http`, `https`, and `socks5`.
+- `fetch.maxRetry`: optional retry budget for thrown network failures. The default is `3`.
 - `workspace`: workspace lifecycle policy for executor runs.
 - `executors`: named command templates plus static environment variables.
 - `executors.<name>.workspace`: optional workspace override. Use `true` to force allocation with `workspace.baseDir`, `false` to disable allocation, a string to override the parent workspace directory, a mapping with `baseDir` and/or `key`, or omit it to inherit `workspace.enabled`.
@@ -106,7 +110,7 @@ workflow:
 ## Provider Runtime Model
 
 - `src/app/` registers provider handlers against provider-owned route paths such as `gh.url`.
-- `src/app/` initializes the shared outbound `fetchHelper()` once from top-level `proxy`, and provider-owned outbound API calls use that helper instead of raw `fetch`.
+- `src/app/` initializes the shared outbound `fetchHelper()` once from top-level `fetch`, and provider-owned outbound API calls use that helper instead of raw `fetch`.
 - A provider handler accepts `(req, res, context)` and owns request parsing, request validation, provider-specific auth, and the HTTP response.
 - The shared `context` exposes:
   - `config`: the parsed app config plus provider-owned sections.
