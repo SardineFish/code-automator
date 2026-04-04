@@ -87,6 +87,15 @@ test("parseServiceConfig accepts an explicit logging level", () => {
   assert.equal(parsed.logging.level, "debug");
 });
 
+test("parseServiceConfig accepts a shared top-level proxy URI", () => {
+  const parsed = parseServiceConfig(
+    `${validConfig}\nproxy: socks5://proxy-user:proxy-pass@127.0.0.1:1080`,
+    "/tmp/configs/test.yml"
+  );
+
+  assert.equal(parsed.proxy, "socks5://proxy-user:proxy-pass@127.0.0.1:1080");
+});
+
 test("parseServiceConfig accepts executor workspace overrides", () => {
   const parsed = parseServiceConfig(
     validConfig
@@ -296,6 +305,26 @@ test("parseServiceConfig rejects unsupported logging levels", () => {
   assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
     assert.ok(error instanceof ConfigError);
     assert.match(error.message, /logging\.level: Expected one of: debug, info, warn, error\./);
+    return true;
+  });
+});
+
+test("parseServiceConfig rejects unsupported proxy schemes", () => {
+  const invalid = `${validConfig}\nproxy: ftp://127.0.0.1:21`;
+
+  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /proxy: Expected a valid proxy URI with scheme http, https, or socks5\./);
+    return true;
+  });
+});
+
+test("parseServiceConfig rejects blank proxy values", () => {
+  const invalid = `${validConfig}\nproxy: "   "`;
+
+  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /proxy: Expected a non-empty proxy URI\./);
     return true;
   });
 });

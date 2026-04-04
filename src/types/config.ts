@@ -70,6 +70,7 @@ export interface AppConfig {
   [key: string]: unknown;
   server: ServerConfig;
   logging: LoggingConfig;
+  proxy?: string;
   workspace: WorkspaceConfig;
   tracking: TrackingConfig;
   gh?: GitHubProviderConfig;

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { initFetchHelper } from "../../../src/providers/http/fetch-helper.js";
 import { readGitHubPullRequestLinkedIssueId } from "../../../src/app/providers/github-utils.js";
 
 test("readGitHubPullRequestLinkedIssueId returns the first linked issue and sends the PR number to GraphQL", async (t) => {
@@ -122,4 +123,47 @@ test("readGitHubPullRequestLinkedIssueId chooses the first linked issue when Git
   });
 
   assert.equal(issueId, "16");
+});
+
+test("readGitHubPullRequestLinkedIssueId uses the shared fetch helper dispatcher when proxying is enabled", async (t) => {
+  const originalFetch = global.fetch;
+  let dispatcherName: string | undefined;
+
+  global.fetch = async (_input, init?: RequestInit & { dispatcher?: { constructor?: { name?: string } } }) => {
+    dispatcherName = init?.dispatcher?.constructor?.name;
+
+    return new Response(
+      JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              closingIssuesReferences: {
+                nodes: [{ number: 16 }]
+              }
+            }
+          }
+        }
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      }
+    );
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+    initFetchHelper(undefined);
+  });
+
+  initFetchHelper("http://127.0.0.1:8080");
+
+  const issueId = await readGitHubPullRequestLinkedIssueId({
+    repoFullName: "acme/demo",
+    prId: "25",
+    token: "installation-token"
+  });
+
+  assert.equal(issueId, "16");
+  assert.equal(dispatcherName, "ProxyAgent");
 });

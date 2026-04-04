@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createSign } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
+import { fetchHelper } from "../../providers/http/fetch-helper.js";
 import { RequestBodyError, readRequestBody } from "../../runtime/http/read-request-body.js";
 import type { WebhookGateContext } from "../../types/runtime.js";
 import type { GitHubReview } from "../../types/workflow-input.js";
@@ -174,7 +175,7 @@ export async function addGitHubReaction(options: {
   target: GitHubReactionTarget;
 }): Promise<void> {
   if (options.target.kind === "pull_request_review") {
-    const response = await fetch("https://api.github.com/graphql", {
+    const response = await fetchHelper("https://api.github.com/graphql", {
       method: "POST",
       headers: createGitHubApiHeaders(options.token, { "Content-Type": "application/json" }),
       body: JSON.stringify({
@@ -202,7 +203,7 @@ export async function addGitHubReaction(options: {
     throw new Error(`GitHub reaction request failed: ${response.status} ${body}`);
   }
 
-  const response = await fetch(getReactionEndpoint(options.repoFullName, options.target.subjectId, options.target.kind), {
+  const response = await fetchHelper(getReactionEndpoint(options.repoFullName, options.target.subjectId, options.target.kind), {
     method: "POST",
     headers: createGitHubApiHeaders(options.token, { "Content-Type": "application/json" }),
     body: JSON.stringify({ content: options.reaction })
@@ -222,7 +223,7 @@ export async function listCommentReactions(options: {
   token: string;
   kind: GitHubReactionListTarget["kind"];
 }): Promise<GitHubReaction[]> {
-  const response = await fetch(`${getReactionEndpoint(options.repoFullName, options.subjectId, options.kind)}?per_page=100`, {
+  const response = await fetchHelper(`${getReactionEndpoint(options.repoFullName, options.subjectId, options.kind)}?per_page=100`, {
     headers: createGitHubApiHeaders(options.token)
   });
 
@@ -270,7 +271,7 @@ export async function addThreadComment(options: {
 }): Promise<void> {
   const [owner, repo] = splitRepoFullName(options.repoFullName);
 
-  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${options.subjectId}/comments`, {
+  const response = await fetchHelper(`https://api.github.com/repos/${owner}/${repo}/issues/${options.subjectId}/comments`, {
     method: "POST",
     headers: createGitHubApiHeaders(options.token, { "Content-Type": "application/json" }),
     body: JSON.stringify({ body: options.body })
@@ -295,7 +296,7 @@ export async function readGitHubThreadState(options: {
     options.kind === "issue"
       ? `https://api.github.com/repos/${owner}/${repo}/issues/${options.subjectId}`
       : `https://api.github.com/repos/${owner}/${repo}/pulls/${options.subjectId}`;
-  const response = await fetch(endpoint, {
+  const response = await fetchHelper(endpoint, {
     headers: createGitHubApiHeaders(options.token)
   });
 
@@ -325,7 +326,7 @@ export async function readGitHubPullRequestLinkedIssueId(options: {
     throw new Error(`Invalid pull request id '${options.prId}'.`);
   }
 
-  const response = await fetch("https://api.github.com/graphql", {
+  const response = await fetchHelper("https://api.github.com/graphql", {
     method: "POST",
     headers: createGitHubApiHeaders(options.token, { "Content-Type": "application/json" }),
     body: JSON.stringify({
@@ -456,7 +457,7 @@ export interface GitHubInstallationTokenClient {
 
 export const fetchGitHubInstallationTokenClient: GitHubInstallationTokenClient = {
   async createInstallationAccessToken(jwt, installationId) {
-    const response = await fetch(
+    const response = await fetchHelper(
       `https://api.github.com/app/installations/${installationId}/access_tokens`,
       {
         method: "POST",

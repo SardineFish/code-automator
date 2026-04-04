@@ -1,3 +1,4 @@
+import { fetchHelper } from "../../providers/http/fetch-helper.js";
 import { asObject, readInteger, readString } from "./github-utils.js";
 import { parseGitHubDeliveryJson } from "./github-redelivery-json.js";
 
@@ -28,7 +29,7 @@ export interface GitHubAppWebhookDeliveryClient {
 
 export const fetchGitHubAppWebhookDeliveryClient: GitHubAppWebhookDeliveryClient = {
   async getDelivery(jwt, deliveryId) {
-    const response = await fetch(`https://api.github.com/app/hook/deliveries/${deliveryId}`, {
+    const response = await fetchHelper(`https://api.github.com/app/hook/deliveries/${deliveryId}`, {
       headers: createGitHubAppHeaders(jwt)
     });
 
@@ -43,7 +44,7 @@ export const fetchGitHubAppWebhookDeliveryClient: GitHubAppWebhookDeliveryClient
     return payload;
   },
   async listDeliveries(jwt, pageUrl) {
-    const response = await fetch(pageUrl ?? "https://api.github.com/app/hook/deliveries?per_page=100", {
+    const response = await fetchHelper(pageUrl ?? "https://api.github.com/app/hook/deliveries?per_page=100", {
       headers: createGitHubAppHeaders(jwt)
     });
 
@@ -65,7 +66,7 @@ export const fetchGitHubAppWebhookDeliveryClient: GitHubAppWebhookDeliveryClient
     };
   },
   async redeliverDelivery(jwt, deliveryId) {
-    const response = await fetch(`https://api.github.com/app/hook/deliveries/${deliveryId}/attempts`, {
+    const response = await fetchHelper(`https://api.github.com/app/hook/deliveries/${deliveryId}/attempts`, {
       method: "POST",
       headers: createGitHubAppHeaders(jwt)
     });
