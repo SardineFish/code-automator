@@ -8,8 +8,48 @@ import test from "node:test";
 
 import {
   CODEX_REUSE_STATE_FILE,
+  launch,
   runCodexReuse
 } from "../../scripts/codex-reuse.js";
+
+const CODEX_COMMAND = "/path/to/codex";
+
+test("launch starts codex in the workspace and resumes when a thread id exists", () => {
+  const spawned: Array<{
+    command: string;
+    args: string[];
+    options: {
+      cwd: string;
+      env: NodeJS.ProcessEnv;
+      stdio: ["ignore", "pipe", "pipe"];
+    };
+  }> = [];
+  const child = createFakeChild();
+  const env = { TEST_ENV: "1" };
+  const spawnOptions: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    stdio: ["ignore", "pipe", "pipe"];
+  } = {
+    cwd: "/tmp/reusable-issue",
+    env,
+    stdio: ["ignore", "pipe", "pipe"]
+  };
+
+  const launched = launch(CODEX_COMMAND, "Continue the issue", "thread-456", (command: string, args: string[], options) => {
+    spawned.push({ command, args, options });
+    return child;
+  }, spawnOptions);
+
+  assert.equal(launched, child);
+  assert.deepEqual(spawned, [
+    {
+      command: CODEX_COMMAND,
+      args: ["exec", "resume", "--json", "thread-456", "Continue the issue"],
+      options: spawnOptions
+    }
+  ]);
+});
 
 test("codex-reuse stores the first thread_id emitted by codex exec --json", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "gao-codex-reuse-"));
@@ -22,7 +62,7 @@ test("codex-reuse stores the first thread_id emitted by codex exec --json", asyn
     output += chunk;
   });
 
-  const exitCode = await runCodexReuse(["Plan issue 7"], {
+  const exitCode = await runCodexReuse([CODEX_COMMAND, "Plan issue 7"], {
     cwd: dir,
     stdout,
     stderr: new PassThrough(),
@@ -40,7 +80,7 @@ test("codex-reuse stores the first thread_id emitted by codex exec --json", asyn
   assert.equal(exitCode, 0);
   assert.deepEqual(spawned, [
     {
-      command: "codex",
+      command: CODEX_COMMAND,
       args: ["exec", "--json", "Plan issue 7"]
     }
   ]);
@@ -59,7 +99,7 @@ test("codex-reuse resumes the saved session when metadata already exists", async
   );
 
   const spawned: Array<{ command: string; args: string[] }> = [];
-  const exitCode = await runCodexReuse(["Continue the issue"], {
+  const exitCode = await runCodexReuse([CODEX_COMMAND, "Continue the issue"], {
     cwd: dir,
     stdout: new PassThrough(),
     stderr: new PassThrough(),
@@ -72,10 +112,16 @@ test("codex-reuse resumes the saved session when metadata already exists", async
   assert.equal(exitCode, 0);
   assert.deepEqual(spawned, [
     {
-      command: "codex",
+      command: CODEX_COMMAND,
       args: ["exec", "resume", "--json", "thread-456", "Continue the issue"]
     }
   ]);
+});
+
+test("codex-reuse requires a codex command path before the prompt", async () => {
+  await assert.rejects(() => runCodexReuse([]), {
+    message: "codex-reuse requires a codex command path as the first argument."
+  });
 });
 
 function createFakeChild(options: { stdoutLines?: string[]; exitCode?: number } = {}) {

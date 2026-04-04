@@ -3,22 +3,40 @@ import type { EventEmitter } from "node:events";
 
 export const CODEX_REUSE_STATE_FILE: string;
 
+export type CodexSpawn = (
+  command: string,
+  args: string[],
+  options: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    stdio: ["ignore", "pipe", "pipe"];
+  }
+) => EventEmitter & {
+  stdout?: Readable & { setEncoding(encoding: BufferEncoding): void };
+  stderr?: Readable;
+  once(eventName: "error" | "close", listener: (...args: unknown[]) => void): unknown;
+};
+
+export function launch(
+  codexPath: string,
+  prompt: string,
+  threadId: string | undefined,
+  spawn: CodexSpawn,
+  spawnOptions: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    stdio: ["ignore", "pipe", "pipe"];
+  }
+): EventEmitter & {
+  stdout?: Readable & { setEncoding(encoding: BufferEncoding): void };
+  stderr?: Readable;
+  once(eventName: "error" | "close", listener: (...args: unknown[]) => void): unknown;
+};
+
 export function runCodexReuse(
   argv?: string[],
   dependencies?: {
-    spawn?: (
-      command: string,
-      args: string[],
-      options: {
-        cwd: string;
-        env: NodeJS.ProcessEnv;
-        stdio: ["ignore", "pipe", "pipe"];
-      }
-    ) => EventEmitter & {
-      stdout?: Readable & { setEncoding(encoding: BufferEncoding): void };
-      stderr?: Readable;
-      once(eventName: "error" | "close", listener: (...args: unknown[]) => void): unknown;
-    };
+    spawn?: CodexSpawn;
     env?: NodeJS.ProcessEnv;
     cwd?: string;
     stdout?: Writable;

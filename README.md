@@ -102,12 +102,12 @@ Use a keyed workspace when one issue should keep the same checkout and Codex thr
 ```yaml
 executors:
   codex:
-    run: node ./scripts/codex-reuse.js ${prompt}
+    run: ${env.NODE_BIN} /absolute/path/to/scripts/codex-reuse.js /absolute/path/to/codex ${prompt}
     workspace:
       baseDir: /var/lib/coding-automator/issues
       key: ${in.repo}#${in.issueId}
   codex-reset:
-    run: node ./scripts/reset-session.js ${workspace}
+    run: ${env.NODE_BIN} /absolute/path/to/scripts/reset-session.js ${workspace}
     workspace:
       baseDir: /var/lib/coding-automator/issues
       key: ${in.repo}#${in.issueId}
@@ -125,6 +125,8 @@ workflow:
 ```
 
 The reusable workspace directory name is derived directly from the rendered key after path-safe escaping, for example `acme/demo#7` becomes `acme_demo#7`.
+
+`codex-reuse.js` expects the Codex executable or wrapper path as its first argument, for example `/absolute/path/to/codex` or `/absolute/path/to/run-codex.sh`.
 
 ## Event Providers
 
@@ -163,7 +165,7 @@ The redelivery worker stores its checkpoint next to the tracked run artifacts un
 ## Configuration Notes
 
 - Workflow prompts may use `${in.*}` variables.
-- Executor commands may use `${prompt}`, `${workspace}`, and `${workspaceKey}`.
+- Executor commands may use `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.<NAME>}`.
 - `executors.<name>.workspace` is optional:
   - omit it to inherit `workspace.enabled` and `workspace.baseDir`
   - set `false` to disable workspace allocation for that executor
@@ -172,7 +174,9 @@ The redelivery worker stores its checkpoint next to the tracked run artifacts un
   - set a mapping with `baseDir` and/or `key` to configure reusable keyed workspaces
 - `executors.<name>.workspace.key` renders from workflow input such as `${in.repo}#${in.issueId}`.
 - Runs that render the same `workspace.key` are serialized across executors and reuse one stable workspace directory.
-- `${prompt}`, `${workspace}`, and `${workspaceKey}` are shell-escaped before command execution.
+- `${env.<NAME>}` resolves from the final executor environment after merge order `base process env -> executor env -> trigger env`, plus injected values such as `GH_TOKEN` when present.
+- `${env.NODE_BIN}` resolves to the current Node.js binary path from `process.execPath`, even if it is not otherwise present in the child process environment.
+- `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.*}` values are shell-escaped before command execution.
 - The current GitHub provider keeps `in` intentionally small. It emits `event`, `user`, `repo`, and when relevant `issueId`, `content`, and `command`.
 - The executor launch environment is merged as `base process env -> executor env -> trigger env`.
 - The shipped GitHub provider injects `GH_TOKEN` for matched runs so your agent can call GitHub as the app installation.

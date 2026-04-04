@@ -144,6 +144,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Persist keyed queue ownership plus pending launch context so runs that share one workspace key serialize cleanly across executors and survive restart.
 - Add Codex reuse and reset wrappers, then route GitHub `issue:close` and `/reset` through the documented cleanup path with focused regression coverage.
 
+### Plan 22: Executor runtime environment template support [done]
+
+- Expose the merged executor runtime environment to command templates through `${env.*}` so templates can reference the same values the child process receives.
+- Keep `${env.NODE_BIN}` available as a stable helper for the current Node.js binary path from `process.execPath`.
+- Let the Codex reuse wrapper accept the Codex executable or wrapper path as an explicit argument so operators can choose launchers per executor.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

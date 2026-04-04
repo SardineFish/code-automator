@@ -11,7 +11,7 @@ The current starter scope for Coding Automator is a provider-extensible ingress 
 - Evaluate workflows in declaration order and run only the first matching workflow.
 - Keep the initial GitHub workflow set `issue-plan`, `issue-implement`, `issue-at`, and `pr-review` working behind the GitHub provider.
 - Render workflow prompts from provider-defined `${in.*}` fields.
-- Launch the configured executor command with `${prompt}`, `${workspace}`, executor-specific environment variables, optional executor timeouts, and any provider-supplied request-scoped environment variables.
+- Launch the configured executor command with `${prompt}`, `${workspace}`, `${env.*}`, executor-specific environment variables, optional executor timeouts, and any provider-supplied request-scoped environment variables.
 - Persist workflow run state to a JSON file and append terminal results to a JSONL log.
 - Recover tracked workflow status on restart from saved PIDs and detached-process result files.
 - Support service-side workspace defaults with `workspace.enabled`, `workspace.baseDir`, and `workspace.cleanupAfterRun`, plus per-executor `executors.<name>.workspace` overrides.

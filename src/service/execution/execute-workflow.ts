@@ -30,22 +30,15 @@ export async function executeWorkflow(options: ExecuteWorkflowOptions): Promise<
   }
 
   const workspacePath = options.workspacePath ?? (await prepareWorkspace(options));
+  const env = buildExecutionEnv(options, executor.env);
 
   try {
     const command = renderExecutorCommand(executor.run, {
       prompt: toShellLiteral(options.prompt),
       workspace: toShellLiteral(workspacePath, { allowEmpty: true }),
-      workspaceKey: toShellLiteral(options.workspaceKey ?? "", { allowEmpty: true })
+      workspaceKey: toShellLiteral(options.workspaceKey ?? "", { allowEmpty: true }),
+      env: buildExecutorTemplateEnv(env)
     });
-    const env = {
-      ...options.baseEnv,
-      ...executor.env,
-      ...options.triggerEnv
-    };
-
-    if (options.installationToken) {
-      env.GH_TOKEN = options.installationToken;
-    }
 
     const startedProcess = await options.processRunner.startDetached(command, {
       artifacts: options.artifacts,
@@ -71,6 +64,36 @@ export async function executeWorkflow(options: ExecuteWorkflowOptions): Promise<
 
     throw error;
   }
+}
+
+function buildExecutionEnv(
+  options: ExecuteWorkflowOptions,
+  executorEnv: Record<string, string>
+): NodeJS.ProcessEnv {
+  const env = {
+    ...options.baseEnv,
+    ...executorEnv,
+    ...options.triggerEnv
+  };
+
+  if (options.installationToken) {
+    env.GH_TOKEN = options.installationToken;
+  }
+
+  return env;
+}
+
+function buildExecutorTemplateEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const templateEnv: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined) {
+      templateEnv[key] = toShellLiteral(value);
+    }
+  }
+
+  templateEnv.NODE_BIN = toShellLiteral(process.execPath);
+  return templateEnv;
 }
 
 async function resolveWorkspace(options: ExecuteWorkflowOptions): Promise<string> {
