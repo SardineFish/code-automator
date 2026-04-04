@@ -16,7 +16,8 @@ const artifacts = {
 test("executeWorkflow shell-escapes prompt and injects the installation token", async () => {
   const config = createServiceConfig();
   config.workspace.enabled = false;
-  config.executors.codex.run = "codex -w ${workspace} exec ${prompt}";
+  config.executors.codex.run =
+    "${env.NODE_BIN} codex -w ${workspace} --base ${env.BASE} --executor ${env.EXECUTOR} --shared ${env.SHARED} --trigger ${env.TRIGGER_ONLY} --token ${env.GH_TOKEN} exec ${prompt}";
   config.executors.codex.env.SHARED = "executor";
   config.executors.codex.workspace = "/tmp/custom-parent";
 
@@ -72,7 +73,10 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
 
   assert.equal(result.status, "running");
   assert.equal(result.pid, 4242);
-  assert.equal(result.command, "codex -w '/tmp/workspace-1' exec 'O'\"'\"'Hara'");
+  assert.equal(
+    result.command,
+    `'${process.execPath}' codex -w '/tmp/workspace-1' --base '1' --executor 'codex' --shared 'trigger' --trigger '1' --token 'installation-token' exec 'O'"'"'Hara'`
+  );
   assert.equal(calls.workspaceBaseDir, "/tmp/custom-parent");
   assert.equal(calls.cwd, "/tmp/workspace-1");
   assert.equal(calls.env?.BASE, "1");

@@ -38,7 +38,7 @@ chat-bot:
   url: /chat
 executors:
   codex:
-    run: node ./scripts/codex-reuse.js ${prompt}
+    run: ${env.NODE_BIN} /absolute/path/to/scripts/codex-reuse.js /absolute/path/to/codex ${prompt}
     workspace:
       baseDir: /var/lib/coding-automator/issues
       key: ${in.repo}#${in.issueId}
@@ -46,7 +46,7 @@ executors:
     env:
       FOO: BAR
   codex-reset:
-    run: node ./scripts/reset-session.js ${workspace}
+    run: ${env.NODE_BIN} /absolute/path/to/scripts/reset-session.js ${workspace}
     workspace:
       baseDir: /var/lib/coding-automator/issues
       key: ${in.repo}#${in.issueId}
@@ -122,14 +122,17 @@ workflow:
 ## Interpolation Rules
 
 - Workflow prompts may use `${in.*}` variables.
-- Executor commands may use `${prompt}`, `${workspace}`, and `${workspaceKey}`.
+- Executor commands may use `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.<NAME>}`.
 - `${prompt}` is the rendered workflow prompt.
 - `${workspace}` is the per-run workspace path when the selected executor resolves to workspace allocation, otherwise an empty string.
 - `${workspaceKey}` is the rendered `executors.<name>.workspace.key` value when configured, otherwise an empty string.
+- `${env.<NAME>}` resolves from the final executor environment after merge order `base process env -> executor env -> trigger env`, plus injected values such as `GH_TOKEN` when present.
+- `${env.NODE_BIN}` is the current Node.js binary path from `process.execPath`, even if it is not otherwise present in the child process environment.
 - Executor `env` entries are added to the child process environment for that run.
 - Provider-supplied `trigger(..., { env })` values are added to the child process environment for the matched run.
 - Environment merge order is `base process env -> executor env -> trigger env`.
-- Executor `${prompt}`, `${workspace}`, and `${workspaceKey}` values are shell-escaped before the command runs through `/bin/sh -lc`.
+- Executor `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.*}` values are shell-escaped before the command runs through `/bin/sh -lc`.
+- Reusable-session helper scripts such as `codex-reuse.js` may accept additional positional arguments before `${prompt}`, for example a Codex wrapper path.
 - Missing or unsupported template variables throw an error.
 - `null` template values render as an empty string.
 - Objects and arrays render as compact JSON.
@@ -144,6 +147,7 @@ workflow:
 ## Workspace Rules
 
 - `workspace.enabled` remains the service-level default for whether executors allocate a workspace.
+- `workspace.baseDir`, string `executors.<name>.workspace`, and `executors.<name>.workspace.baseDir` resolve relative to the YAML config file directory when they are not already absolute.
 - `executors.<name>.workspace` overrides that default per executor:
   - omit it to inherit `workspace.enabled`
   - set `false` to disable workspace allocation

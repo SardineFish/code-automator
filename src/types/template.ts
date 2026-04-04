@@ -14,6 +14,7 @@ export interface ExecutorTemplateVariables {
   prompt: string;
   workspace: string;
   workspaceKey: string;
+  env: Record<string, string>;
 }
 
 export type TemplateVariables = Record<string, unknown>;

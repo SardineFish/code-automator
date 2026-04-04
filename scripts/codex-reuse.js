@@ -8,27 +8,34 @@ import { pathToFileURL } from "node:url";
 
 export const CODEX_REUSE_STATE_FILE = ".codex-reuse.json";
 
+export function launch(codexPath, prompt, threadId, spawn, spawnOptions) {
+  const commandArgs = threadId
+    ? ["exec", "resume", "--json", threadId, prompt]
+    : ["exec", "--json", prompt];
+
+  return spawn(codexPath, commandArgs, spawnOptions);
+}
+
 export async function runCodexReuse(
   argv = process.argv.slice(2),
   dependencies = {}
 ) {
   const spawn = dependencies.spawn ?? spawnChildProcess;
   const env = dependencies.env ?? process.env;
-  const cwd = dependencies.cwd ?? process.cwd();
+  const workspacePath = dependencies.cwd ?? process.cwd();
   const stdout = dependencies.stdout ?? process.stdout;
   const stderr = dependencies.stderr ?? process.stderr;
-  const prompt = await readPrompt(argv, dependencies.stdin ?? process.stdin);
-  const state = await readState(cwd, dependencies);
-  const commandArgs = state?.threadId
-    ? ["exec", "resume", "--json", state.threadId, prompt]
-    : ["exec", "--json", prompt];
+  const [codexPath, ...promptArgv] = argv;
+  const codexCommand = readCodexPath(codexPath);
+  const prompt = await readPrompt(promptArgv, dependencies.stdin ?? process.stdin);
+  const state = await readState(workspacePath, dependencies);
 
   let lineBuffer = "";
   let capturedThreadId = state?.threadId;
 
   const exitCode = await new Promise((resolve, reject) => {
-    const child = spawn("codex", commandArgs, {
-      cwd,
+    const child = launch(codexCommand, prompt, capturedThreadId, spawn, {
+      cwd: workspacePath,
       env,
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -55,7 +62,7 @@ export async function runCodexReuse(
           capturedThreadId = trailingThreadId;
         }
         if (capturedThreadId) {
-          await writeState(cwd, capturedThreadId, dependencies);
+          await writeState(workspacePath, capturedThreadId, dependencies);
         }
         resolve(code ?? 1);
       } catch (error) {
@@ -120,6 +127,14 @@ function readThreadIdFromJsonLine(line) {
   } catch {
     return undefined;
   }
+}
+
+function readCodexPath(argvValue) {
+  if (typeof argvValue !== "string" || argvValue.trim() === "") {
+    throw new Error("codex-reuse requires a codex command path as the first argument.");
+  }
+
+  return argvValue;
 }
 
 async function readPrompt(argv, stdin) {

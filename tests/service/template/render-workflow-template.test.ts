@@ -52,19 +52,38 @@ test("renderWorkflowPrompt rejects missing path segments", () => {
   });
 });
 
-test("renderExecutorCommand resolves prompt and workspace variables", () => {
-  const command = renderExecutorCommand("codex -w ${workspace} --key ${workspaceKey} exec ${prompt}", {
-    prompt: "Analyze issue",
-    workspace: "/tmp/workspace-1",
-    workspaceKey: "acme/demo#7"
-  });
+test("renderExecutorCommand resolves prompt, workspace, workspaceKey, and env variables", () => {
+  const command = renderExecutorCommand(
+    "${env.NODE_BIN} runner.js --mode ${env.EXECUTOR} --token ${env.GH_TOKEN} -w ${workspace} --key ${workspaceKey} exec ${prompt}",
+    {
+      prompt: "Analyze issue",
+      workspace: "/tmp/workspace-1",
+      workspaceKey: "acme/demo#7",
+      env: {
+        NODE_BIN: "/usr/local/bin/node",
+        EXECUTOR: "codex",
+        GH_TOKEN: "token-1"
+      }
+    }
+  );
 
-  assert.equal(command, "codex -w /tmp/workspace-1 --key acme/demo#7 exec Analyze issue");
+  assert.equal(
+    command,
+    "/usr/local/bin/node runner.js --mode codex --token token-1 -w /tmp/workspace-1 --key acme/demo#7 exec Analyze issue"
+  );
 });
 
 test("renderExecutorCommand rejects unsupported roots", () => {
   assert.throws(
-    () => renderExecutorCommand("echo ${in.issueId}", { prompt: "x", workspace: "", workspaceKey: "" }),
+    () =>
+      renderExecutorCommand("echo ${in.issueId}", {
+        prompt: "x",
+        workspace: "",
+        workspaceKey: "",
+        env: {
+          NODE_BIN: "/usr/local/bin/node"
+        }
+      }),
     {
       name: "TemplateRenderError",
       message: /Unsupported root 'in'/
