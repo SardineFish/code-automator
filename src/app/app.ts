@@ -9,7 +9,7 @@ import {
   type WorkflowTrackingCleanup
 } from "./default-app-runtime.js";
 import { createAppContext } from "./create-app-context.js";
-import { createHttpAppService } from "./http-app-service.js";
+import { startHttpAppService, type HttpAppService } from "./http-app-service.js";
 
 export type AppOptions = AppRuntimeOverrides;
 export type { ProviderHandler } from "../types/runtime.js";
@@ -25,7 +25,7 @@ export function App(config: ServiceConfig, options: AppOptions = {}): AppBuilder
 }
 
 class AppBuilder {
-  readonly #httpService;
+  #httpService?: HttpAppService;
   readonly #providers = new Map<string, AnyProvider>();
   readonly #services: AppServiceHandler[] = [];
   #initializePromise?: Promise<WorkflowTrackingCleanup>;
@@ -34,8 +34,13 @@ class AppBuilder {
     private readonly config: ServiceConfig,
     private readonly runtime: AppRuntimeOptions
   ) {
-    this.#httpService = createHttpAppService(this.config.server, this.runtime.logSink);
-    this.service(this.#httpService.service);
+    this.service(async (appContext) => {
+      const httpService = await startHttpAppService(appContext, this.runtime.logSink);
+      this.#httpService = httpService;
+      appContext.on("shutdown", async () => {
+        await httpService.requestDrain.stopAcceptingRequests();
+      });
+    });
   }
 
   provider<TArgs extends unknown[] = unknown[], TResult = unknown>(
@@ -73,13 +78,20 @@ class AppBuilder {
         await service(managedApp.appContext);
       }
 
-      const server = this.#httpService.getServer();
+      const server = this.#httpService?.server;
+
+      if (!server || !this.#httpService) {
+        throw new Error("HTTP app service did not start.");
+      }
+
       const shutdown = (): Promise<void> => {
         if (shutdownPromise) {
           return shutdownPromise;
         }
 
-        shutdownPromise = shutdownApp(managedApp.shutdown, () => this.#httpService.waitForIdleRequests());
+        shutdownPromise = shutdownApp(managedApp.shutdown, () =>
+          this.#httpService?.requestDrain.waitForIdleRequests() ?? Promise.resolve()
+        );
         return shutdownPromise;
       };
 
@@ -96,7 +108,9 @@ class AppBuilder {
         shutdown
       };
     } catch (error) {
-      await shutdownApp(managedApp.shutdown, () => this.#httpService.waitForIdleRequests());
+      await shutdownApp(managedApp.shutdown, () =>
+        this.#httpService?.requestDrain.waitForIdleRequests() ?? Promise.resolve()
+      );
       throw error;
     }
   }
