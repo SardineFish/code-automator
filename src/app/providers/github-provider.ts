@@ -53,9 +53,9 @@ import { resolveGitHubProviderConfig } from "./github-config.js";
  * content, prReview, and command.
  */
 export async function githubProvider(
+  context: WorkflowContext,
   request: IncomingMessage,
-  response: ServerResponse,
-  context: WorkflowContext
+  response: ServerResponse
 ): Promise<void> {
   const github = resolveGitHubProviderConfig(context.config.gh);
 

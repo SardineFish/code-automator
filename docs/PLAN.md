@@ -191,6 +191,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Rename the request-scoped context factory from `createAppContext` to `createWorkflowContext` and keep call sites behaviorally identical.
 - Update runtime, tracking, and provider listener type names from `AppContext*` to `WorkflowContext*` so request-scoped semantics stay explicit.
 
+### Plan 30: App-level runtime context and shutdown wiring [done]
+
+- Add the new app-level `AppContext` with dynamic `getProvider<T>()`, multi-workflow creation, and shutdown-handler registration while keeping `WorkflowContext` as the request-scoped submission unit.
+- Refactor the shared app builder around generic providers and startup services, and route the built-in HTTP server through dynamic provider lookup by exact pathname.
+- Make app shutdown own request draining plus workflow-tracking cleanup, with focused tests for app-context behavior, HTTP dispatch, and shutdown cleanup.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

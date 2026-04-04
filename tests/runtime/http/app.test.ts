@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import test from "node:test";
@@ -7,7 +8,7 @@ import { createServiceConfig } from "../../fixtures/service-config.js";
 import { createNoOpLogSink } from "../../fixtures/log-sink.js";
 
 test("App dispatches exact provider routes and lets providers own the response", async () => {
-  const { server, url } = await startApp((request, response) => {
+  const { shutdown, url } = await startApp(async (_context, request, response) => {
     assert.equal(new URL(request.url ?? "/", "http://127.0.0.1").pathname, "/chat");
     response.statusCode = 204;
     response.end();
@@ -16,39 +17,67 @@ test("App dispatches exact provider routes and lets providers own the response",
   const result = await fetch(url, { method: "POST" });
 
   assert.equal(result.status, 204);
-  server.close();
-  await once(server, "close");
+  await shutdown();
 });
 
-test("App rejects duplicate provider routes", () => {
+test("App rejects duplicate provider keys", () => {
   const builder = App(createAppConfig(), createRuntimeOptions());
-  builder.provider("/chat", (_request, response) => {
-    response.end("ok");
-  });
+  builder.provider<[IncomingMessage, ServerResponse], void>(
+    "/chat",
+    async (_context, _request, response) => {
+      response.end("ok");
+    }
+  );
 
   assert.throws(
     () =>
-      builder.provider("/chat", (_request, response) => {
-        response.end("duplicate");
-      }),
+      builder.provider<[IncomingMessage, ServerResponse], void>(
+        "/chat",
+        async (_context, _request, response) => {
+          response.end("duplicate");
+        }
+      ),
     /already registered/
   );
 });
 
+test("App starts registered services and runs their shutdown handlers", async () => {
+  const events: string[] = [];
+  const app = await App(createAppConfig(), createRuntimeOptions())
+    .provider<[IncomingMessage, ServerResponse], void>(
+      "/chat",
+      async (_context, _request, response) => {
+        response.statusCode = 204;
+        response.end();
+      }
+    )
+    .service(async (appContext) => {
+      events.push("start");
+      appContext.on("shutdown", async () => {
+        events.push("shutdown");
+      });
+    })
+    .listen();
+
+  await app.shutdown();
+
+  assert.deepEqual(events, ["start", "shutdown"]);
+});
+
+
 test("App returns 500 when a provider throws", async () => {
-  const { server, url } = await startApp(() => {
+  const { shutdown, url } = await startApp(async () => {
     throw new Error("boom");
   });
 
   const result = await fetch(url, { method: "POST" });
 
   assert.equal(result.status, 500);
-  server.close();
-  await once(server, "close");
+  await shutdown();
 });
 
 test("App returns 500 when a provider submits duplicate trigger names", async () => {
-  const { server, url } = await startApp((_request, _response, context) => {
+  const { shutdown, url } = await startApp(async (context) => {
     context.trigger("issue:comment", { in: { content: "hello" } });
     context.trigger("issue:comment", { in: { content: "again" } });
   });
@@ -56,15 +85,14 @@ test("App returns 500 when a provider submits duplicate trigger names", async ()
   const result = await fetch(url, { method: "POST" });
 
   assert.equal(result.status, 500);
-  server.close();
-  await once(server, "close");
+  await shutdown();
 });
 
-test("App stopAcceptingRequests drains started requests before waitForIdleRequests resolves", async () => {
+test("App shutdown drains started requests before resolving", async () => {
   const started = createDeferred<void>();
   const release = createDeferred<void>();
-  const { server, stopAcceptingRequests, waitForIdleRequests, url } = await startApp(
-    async (_request, response) => {
+  const { server, shutdown, url } = await startApp(
+    async (_context, _request, response) => {
       started.resolve();
       await release.promise;
       response.statusCode = 204;
@@ -75,16 +103,14 @@ test("App stopAcceptingRequests drains started requests before waitForIdleReques
   const activeRequest = fetch(url, { method: "POST" });
 
   await started.promise;
-  await stopAcceptingRequests();
+  let shutdownResolved = false;
+  const shutdownPromise = shutdown().then(() => {
+    shutdownResolved = true;
+  });
   const serverClosed = once(server, "close");
 
-  let idleResolved = false;
-  const idlePromise = waitForIdleRequests().then(() => {
-    idleResolved = true;
-  });
-
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.equal(idleResolved, false);
+  assert.equal(shutdownResolved, false);
 
   const secondRequest = await tryFetch(url);
   assert.ok(secondRequest.kind === "error" || secondRequest.status === 503);
@@ -93,12 +119,24 @@ test("App stopAcceptingRequests drains started requests before waitForIdleReques
 
   const result = await activeRequest;
   assert.equal(result.status, 204);
-  await idlePromise;
+  await shutdownPromise;
   await serverClosed;
 });
 
+test("App returns 404 for unknown provider paths", async () => {
+  const { shutdown, url } = await startApp(async (_context, _request, response) => {
+    response.statusCode = 204;
+    response.end();
+  });
+
+  const result = await fetch(url.replace("/chat", "/missing"), { method: "POST" });
+
+  assert.equal(result.status, 404);
+  await shutdown();
+});
+
 async function startApp(
-  handler: ProviderHandler
+  handler: ProviderHandler<[IncomingMessage, ServerResponse], void>
 ) {
   const app = await App(createAppConfig(), createRuntimeOptions())
     .provider("/chat", handler)
@@ -111,8 +149,7 @@ async function startApp(
 
   return {
     server: app.server,
-    stopAcceptingRequests: () => app.stopAcceptingRequests(),
-    waitForIdleRequests: () => app.waitForIdleRequests(),
+    shutdown: () => app.shutdown(),
     url: `http://127.0.0.1:${address.port}/chat`
   };
 }

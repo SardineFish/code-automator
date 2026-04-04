@@ -50,16 +50,18 @@ export function createAppRuntimeOptions(
   };
 }
 
+export type WorkflowTrackingCleanup = () => Promise<void>;
+
 export async function initializeWorkflowTracking(
   config: ServiceConfig,
   options: AppRuntimeOptions
-): Promise<void> {
+): Promise<WorkflowTrackingCleanup> {
   await options.workflowTracker.initialize();
   await launchRecoverableQueuedRuns(config, options);
   await reconcileWorkflowTracking(config, options);
 
   if (options.reconcileIntervalMs < 1) {
-    return;
+    return async () => {};
   }
 
   const reconcileTimer = setInterval(() => {
@@ -73,6 +75,10 @@ export async function initializeWorkflowTracking(
   }, options.reconcileIntervalMs);
 
   reconcileTimer.unref();
+
+  return async () => {
+    clearInterval(reconcileTimer);
+  };
 }
 
 function resolveBaseEnv(baseEnv: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {

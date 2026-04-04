@@ -91,9 +91,8 @@ export function createCliShutdownCoordinator(
   };
 
   async function drainGracefully(): Promise<void> {
-    await options.app.stopAcceptingRequests();
     await options.redeliveryWorker.stop();
-    await options.app.waitForIdleRequests();
+    await options.app.shutdown();
     await waitForActiveRunsToDrain(options.workflowTracker, pollIntervalMs, sleep);
   }
 }

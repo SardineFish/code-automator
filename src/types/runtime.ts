@@ -86,3 +86,31 @@ export interface WorkflowContext {
   ): () => void;
   submit(): Promise<OrchestrationResult>;
 }
+
+export type ProviderHandler<
+  TArgs extends unknown[] = unknown[],
+  TResult = unknown
+> = (ctx: WorkflowContext, ...args: TArgs) => Promise<TResult>;
+
+export type AnyProvider = ProviderHandler<any[], unknown>;
+
+export type ProviderArgs<T extends AnyProvider> =
+  T extends (ctx: WorkflowContext, ...args: infer A) => Promise<unknown>
+    ? A
+    : never;
+
+export type ProviderResult<T extends AnyProvider> =
+  T extends (ctx: WorkflowContext, ...args: unknown[]) => Promise<infer R>
+    ? R
+    : never;
+
+export interface AppContext {
+  config: ServiceConfig;
+  env: NodeJS.ProcessEnv;
+  log: LogSink;
+  createWorkflow(source: string): WorkflowContext;
+  getProvider<T extends AnyProvider>(key: string): T;
+  on(eventName: "shutdown", handler: () => Promise<void>): () => void;
+}
+
+export type AppServiceHandler = (app: AppContext) => Promise<void>;
