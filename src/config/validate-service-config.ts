@@ -14,7 +14,7 @@ import type {
 import { runtimeLogLevels } from "../types/logging.js";
 import { isTriggerKey } from "../types/triggers.js";
 import { ConfigError } from "./config-error.js";
-import { expandWorkflowPromptFileIncludes } from "./expand-prompt-file-includes.js";
+import { expandWorkflowPromptFileIncludes } from "./file-template.js";
 import {
   expectMap,
   readBoolean,
