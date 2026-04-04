@@ -313,6 +313,79 @@ export async function readGitHubThreadState(options: {
   return readString(payload, "state");
 }
 
+export async function readGitHubPullRequestLinkedIssueId(options: {
+  repoFullName: string;
+  prId: string;
+  token: string;
+}): Promise<string | undefined> {
+  const [owner, repo] = splitRepoFullName(options.repoFullName);
+  const prNumber = Number.parseInt(options.prId, 10);
+
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    throw new Error(`Invalid pull request id '${options.prId}'.`);
+  }
+
+  const response = await fetch("https://api.github.com/graphql", {
+    method: "POST",
+    headers: createGitHubApiHeaders(options.token, { "Content-Type": "application/json" }),
+    body: JSON.stringify({
+      query: `
+        query ReadGitHubPullRequestLinkedIssueId($owner: String!, $repo: String!, $pr: Int!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $pr) {
+              closingIssuesReferences(first: 1) {
+                nodes {
+                  number
+                }
+              }
+            }
+          }
+        }
+      `,
+      variables: {
+        owner,
+        repo,
+        pr: prNumber
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`GitHub pull request linked issue request failed: ${response.status} ${body}`);
+  }
+
+  const payload = asObject((await response.json()) as unknown);
+
+  if (!payload) {
+    throw new Error("GitHub pull request linked issue response did not return an object.");
+  }
+
+  const errors = Array.isArray(payload.errors)
+    ? payload.errors
+        .map((value) => readString(asObject(value) ?? {}, "message"))
+        .filter((value): value is string => Boolean(value))
+    : [];
+
+  if (errors.length > 0) {
+    throw new Error(`GitHub pull request linked issue query failed: ${errors.join("; ")}`);
+  }
+
+  const data = readObject(payload, "data");
+  const repository = readObject(data ?? {}, "repository");
+  const pullRequest = readObject(repository ?? {}, "pullRequest");
+  const closingIssuesReferences = readObject(pullRequest ?? {}, "closingIssuesReferences");
+  const nodes = closingIssuesReferences?.nodes;
+
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    return undefined;
+  }
+
+  const issueNumber = readInteger(asObject(nodes[0]) ?? {}, "number");
+
+  return issueNumber === undefined ? undefined : String(issueNumber);
+}
+
 export interface InstallationTokenProvider {
   createInstallationToken(clientId: string, installationId: number): Promise<string>;
 }
