@@ -216,6 +216,26 @@ workflow:
 
 This still exposes the mounted workspace contents to the container, but avoids giving the agent unrestricted access to the whole host filesystem.
 
+If you want to reuse Codex sessions across container runs, mounting the workspace alone is not enough. You also need to persist the Codex home directory, because session metadata is typically stored under `.codex/`.
+
+```yaml
+workspace:
+  enabled: true
+  baseDir: /var/lib/coding-automator/workspaces
+  cleanupAfterRun: false
+executors:
+  codex-docker-reuse:
+    run: docker run --rm -e GH_TOKEN -e OPENAI_API_KEY -v ${workspace}:/workspace -v /var/lib/coding-automator/codex-home:/root/.codex -w /workspace ghcr.io/example/codex:latest codex exec ${prompt}
+workflow:
+  issue-pr:
+    on:
+      - issue:open
+    use: codex-docker-reuse
+    prompt: Check issue ${in.issueId} in ${in.repo}. Implement the issue and open a pull request.
+```
+
+Without that extra `.codex/` mount, the container may lose its session state when it exits, so session resume features will not work reliably.
+
 ## Event Providers
 
 - The current production provider is the GitHub App provider configured under `gh`.
