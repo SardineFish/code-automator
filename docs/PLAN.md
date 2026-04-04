@@ -197,6 +197,13 @@ This file defines the implementation order for the whole Coding Automator projec
 - Refactor the shared app builder around generic providers and startup services, and route the built-in HTTP server through dynamic provider lookup by exact pathname.
 - Make app shutdown own request draining plus workflow-tracking cleanup, with focused tests for app-context behavior, HTTP dispatch, and shutdown cleanup.
 
+### Plan 31: Redelivery as a provider-owned app service [done]
+
+- Move GitHub redelivery startup from manual `main.ts` wiring into a provider-owned app service that starts from `service(...)` and registers `stop()` through `app.on("shutdown", ...)`.
+- Update shared startup wiring to register both the GitHub webhook provider and redelivery service through the app builder runtime path.
+- Remove the explicit redelivery worker dependency from CLI shutdown so the app lifecycle owns that background service boundary.
+- Add focused coverage for the redelivery service lifecycle while keeping the worker behavior and GitHub provider behavior otherwise unchanged.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

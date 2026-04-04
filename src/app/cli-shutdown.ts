@@ -1,6 +1,5 @@
 import type { WorkflowTracker } from "../service/tracking/workflow-tracker.js";
 import type { AppLifecycle } from "./app.js";
-import type { GitHubRedeliveryWorker } from "./providers/github-redelivery-worker.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 250;
 
@@ -19,7 +18,6 @@ export interface CliShutdownCoordinator {
 export interface CliShutdownCoordinatorOptions {
   app: AppLifecycle;
   workflowTracker: Pick<WorkflowTracker, "getActiveRunCount">;
-  redeliveryWorker: Pick<GitHubRedeliveryWorker, "stop">;
   exit?: (code: number) => void;
   pollIntervalMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -91,7 +89,6 @@ export function createCliShutdownCoordinator(
   };
 
   async function drainGracefully(): Promise<void> {
-    await options.redeliveryWorker.stop();
     await options.app.shutdown();
     await waitForActiveRunsToDrain(options.workflowTracker, pollIntervalMs, sleep);
   }

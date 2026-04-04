@@ -26,11 +26,6 @@ test("createCliShutdownCoordinator drains active work in order on first SIGINT",
         return count;
       }
     },
-    redeliveryWorker: {
-      async stop() {
-        events.push("stop-redelivery");
-      }
-    },
     sleep: async () => {
       events.push("sleep");
     },
@@ -48,7 +43,6 @@ test("createCliShutdownCoordinator drains active work in order on first SIGINT",
   assert.equal(coordinator.getState(), "draining");
   assert.deepEqual(messages, [SIGINT_DRAIN_MESSAGE]);
   assert.deepEqual(events, [
-    "stop-redelivery",
     "shutdown-app",
     "count:2",
     "sleep",
@@ -77,11 +71,6 @@ test("createCliShutdownCoordinator forces immediate exit on second SIGINT", asyn
         return 0;
       }
     },
-    redeliveryWorker: {
-      async stop() {
-        events.push("stop-redelivery");
-      }
-    },
     writeLine() {},
     exit(code) {
       exitCodes.push(code);
@@ -98,7 +87,7 @@ test("createCliShutdownCoordinator forces immediate exit on second SIGINT", asyn
   release.resolve();
   await coordinator.waitForShutdown();
 
-  assert.deepEqual(events, ["stop-redelivery", "shutdown-app", "count:0"]);
+  assert.deepEqual(events, ["shutdown-app", "count:0"]);
   assert.deepEqual(exitCodes, [FORCED_SIGINT_EXIT_CODE]);
 });
 
