@@ -24,7 +24,7 @@ const FIXED_NOW = new Date("2026-04-02T12:00:00.000Z");
 test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, recent, and settled deliveries", () => {
   const deliveries: GitHubAppWebhookDelivery[] = [
     {
-      id: 10,
+      id: "10",
       guid: "guid-retry",
       deliveredAt: "2026-04-02T11:40:00.000Z",
       redelivery: false,
@@ -32,7 +32,7 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, rec
       statusCode: 500
     },
     {
-      id: 11,
+      id: "11",
       guid: "guid-retry",
       deliveredAt: "2026-04-02T11:45:00.000Z",
       redelivery: true,
@@ -40,7 +40,7 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, rec
       statusCode: 500
     },
     {
-      id: 20,
+      id: "20",
       guid: "guid-ok",
       deliveredAt: "2026-04-02T11:30:00.000Z",
       redelivery: false,
@@ -48,7 +48,7 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, rec
       statusCode: 500
     },
     {
-      id: 21,
+      id: "21",
       guid: "guid-ok",
       deliveredAt: "2026-04-02T11:35:00.000Z",
       redelivery: true,
@@ -56,7 +56,7 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, rec
       statusCode: 200
     },
     {
-      id: 30,
+      id: "30",
       guid: "guid-recent",
       deliveredAt: "2026-04-02T11:59:45.000Z",
       redelivery: false,
@@ -72,7 +72,7 @@ test("selectGitHubRedeliveryCandidates dedupes by guid and skips successful, rec
     2
   );
 
-  assert.deepEqual(candidates.map((delivery) => delivery.id), [11]);
+  assert.deepEqual(candidates.map((delivery) => delivery.id), ["11"]);
 });
 
 test("createGitHubRedeliveryWorker skips deliveries rejected by the provider filter", async (t) => {
@@ -99,7 +99,7 @@ test("createGitHubRedeliveryWorker retries plain issue comments when requireMent
 
   await createGitHubRedeliveryWorker(harness.options).runOnce();
 
-  assert.deepEqual(harness.redeliveryCalls, [11]);
+  assert.deepEqual(harness.redeliveryCalls, ["11"]);
 });
 
 test("createGitHubRedeliveryWorker skips ignored issue comments without a mention", async (t) => {
@@ -110,6 +110,33 @@ test("createGitHubRedeliveryWorker skips ignored issue comments without a mentio
   await createGitHubRedeliveryWorker(harness.options).runOnce();
 
   assert.deepEqual(harness.redeliveryCalls, []);
+});
+
+test("createGitHubRedeliveryWorker skips approved reviews when ignoreApprovalReview is enabled", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createReviewDetail("ship it", "approved")
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, []);
+});
+
+test("createGitHubRedeliveryWorker retries approved reviews when ignoreApprovalReview is disabled", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createReviewDetail("ship it", "approved"),
+    customizeConfig(config) {
+      if (!config.gh) {
+        throw new Error("Missing test GitHub config.");
+      }
+
+      config.gh.ignoreApprovalReview = false;
+    }
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, ["11"]);
 });
 
 test("createGitHubRedeliveryWorker skips already closed issues", async (t) => {
@@ -175,7 +202,7 @@ test("createGitHubRedeliveryWorker retries relevant unhandled failures even when
 
   await createGitHubRedeliveryWorker(harness.options).runOnce();
 
-  assert.deepEqual(harness.redeliveryCalls, [11]);
+  assert.deepEqual(harness.redeliveryCalls, ["11"]);
 });
 
 test("createGitHubRedeliveryWorker only logs successful retries at info", async (t) => {
@@ -187,7 +214,7 @@ test("createGitHubRedeliveryWorker only logs successful retries at info", async 
 
   await createGitHubRedeliveryWorker(harness.options).runOnce();
 
-  assert.deepEqual(harness.redeliveryCalls, [11]);
+  assert.deepEqual(harness.redeliveryCalls, ["11"]);
   assert.deepEqual(
     records.filter((record) => record.level === "info").map((record) => record.message),
     ["retried GitHub App webhook delivery"]
@@ -258,7 +285,7 @@ test("createGitHubRedeliveryWorker persists settled GUIDs across restarts", asyn
   await createGitHubRedeliveryWorker(harness.options).runOnce();
   await createGitHubRedeliveryWorker(harness.options).runOnce();
 
-  assert.deepEqual(harness.redeliveryCalls, [11]);
+  assert.deepEqual(harness.redeliveryCalls, ["11"]);
 });
 
 test("createGitHubRedeliveryWorker start waits until the first interval before scanning", async (t) => {
@@ -322,7 +349,7 @@ test("createGitHubRedeliveryWorker start waits until the first interval before s
 
 function createIssueOpenedDetail(): GitHubAppWebhookDeliveryDetail {
   return {
-    ...createDeliverySummary(11, "guid-retry"),
+    ...createDeliverySummary("11", "guid-retry"),
     eventName: "issues",
     payload: {
       action: "opened",
@@ -342,7 +369,7 @@ function createIssueCommentDetail(
   options?: { pullRequest?: boolean; senderLogin?: string }
 ): GitHubAppWebhookDeliveryDetail {
   return {
-    ...createDeliverySummary(11, "guid-retry"),
+    ...createDeliverySummary("11", "guid-retry"),
     eventName: "issue_comment",
     payload: {
       action: "created",
@@ -366,7 +393,7 @@ function createIssueCommentDetail(
 
 function createReviewCommentDetail(body: string): GitHubAppWebhookDeliveryDetail {
   return {
-    ...createDeliverySummary(11, "guid-retry"),
+    ...createDeliverySummary("11", "guid-retry"),
     eventName: "pull_request_review_comment",
     payload: {
       action: "created",
@@ -384,7 +411,29 @@ function createReviewCommentDetail(body: string): GitHubAppWebhookDeliveryDetail
   };
 }
 
-function createDeliverySummary(id: number, guid: string): GitHubAppWebhookDelivery {
+function createReviewDetail(body: string, state: string): GitHubAppWebhookDeliveryDetail {
+  return {
+    ...createDeliverySummary("11", "guid-retry"),
+    eventName: "pull_request_review",
+    payload: {
+      action: "submitted",
+      repository: { full_name: "acme/demo" },
+      sender: { login: "octocat" },
+      installation: { id: 42 },
+      pull_request: {
+        number: 8
+      },
+      review: {
+        id: 202,
+        node_id: "PRR_kwDOdemo202",
+        body,
+        state
+      }
+    }
+  };
+}
+
+function createDeliverySummary(id: string, guid: string): GitHubAppWebhookDelivery {
   return {
     id,
     guid,
@@ -413,7 +462,7 @@ async function createWorkerHarness(
   const trackingDir = path.join(dir, "tracking");
   options.customizeConfig?.(config);
   const githubConfig = config.gh;
-  const redeliveryCalls: number[] = [];
+  const redeliveryCalls: string[] = [];
   const originalFetch = global.fetch;
   const logSink = options.logSink ?? createNoOpLogSink();
 
@@ -495,7 +544,7 @@ async function createWorkerHarness(
 
       return options.detail;
     },
-    async redeliverDelivery(_jwt: string, deliveryId: number) {
+    async redeliverDelivery(_jwt: string, deliveryId: string) {
       redeliveryCalls.push(deliveryId);
     }
   };

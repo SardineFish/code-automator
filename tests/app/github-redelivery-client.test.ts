@@ -28,32 +28,32 @@ test("fetchGitHubAppWebhookDeliveryClient normalizes delivery list pages and det
 
     if (url.endsWith("/17")) {
       return new Response(
-        JSON.stringify({
-          id: 17,
-          guid: "guid-17",
-          event: "issue_comment",
-          delivered_at: "2026-04-02T11:30:00.000Z",
-          redelivery: false,
-          status: "FAILED",
-          status_code: 500,
-          request: {
-            payload: {
-              action: "created",
-              repository: { full_name: "acme/demo" },
-              sender: { login: "octocat" },
-              installation: { id: 42 },
-              issue: {
-                number: 7,
-                body: "Need a plan",
-                state: "open"
+        `{
+          "id": 17,
+          "guid": "guid-17",
+          "event": "issue_comment",
+          "delivered_at": "2026-04-02T11:30:00.000Z",
+          "redelivery": false,
+          "status": "FAILED",
+          "status_code": 500,
+          "request": {
+            "payload": {
+              "action": "created",
+              "repository": { "full_name": "acme/demo" },
+              "sender": { "login": "octocat" },
+              "installation": { "id": 42 },
+              "issue": {
+                "number": 7,
+                "body": "Need a plan",
+                "state": "open"
               },
-              comment: {
-                id: 99,
-                body: "@github-agent-orchestrator /approve"
+              "comment": {
+                "id": 99,
+                "body": "@github-agent-orchestrator /approve"
               }
             }
           }
-        }),
+        }`,
         {
           status: 200,
           headers: { "content-type": "application/json" }
@@ -62,16 +62,16 @@ test("fetchGitHubAppWebhookDeliveryClient normalizes delivery list pages and det
     }
 
     return new Response(
-      JSON.stringify([
+      `[
         {
-          id: 17,
-          guid: "guid-17",
-          delivered_at: "2026-04-02T11:30:00.000Z",
-          redelivery: false,
-          status: "FAILED",
-          status_code: 500
+          "id": 17,
+          "guid": "guid-17",
+          "delivered_at": "2026-04-02T11:30:00.000Z",
+          "redelivery": false,
+          "status": "FAILED",
+          "status_code": 500
         }
-      ]),
+      ]`,
       {
         status: 200,
         headers: {
@@ -87,11 +87,11 @@ test("fetchGitHubAppWebhookDeliveryClient normalizes delivery list pages and det
   });
 
   const page = await fetchGitHubAppWebhookDeliveryClient.listDeliveries("jwt-token");
-  const detail = await fetchGitHubAppWebhookDeliveryClient.getDelivery("jwt-token", 17);
+  const detail = await fetchGitHubAppWebhookDeliveryClient.getDelivery("jwt-token", "17");
 
   assert.deepEqual(page.deliveries, [
     {
-      id: 17,
+      id: "17",
       guid: "guid-17",
       deliveredAt: "2026-04-02T11:30:00.000Z",
       redelivery: false,
@@ -101,7 +101,7 @@ test("fetchGitHubAppWebhookDeliveryClient normalizes delivery list pages and det
   ]);
   assert.equal(page.nextPageUrl, "https://api.github.com/app/hook/deliveries?cursor=abc");
   assert.deepEqual(detail, {
-    id: 17,
+    id: "17",
     guid: "guid-17",
     eventName: "issue_comment",
     deliveredAt: "2026-04-02T11:30:00.000Z",
@@ -125,7 +125,7 @@ test("fetchGitHubAppWebhookDeliveryClient normalizes delivery list pages and det
     }
   });
 
-  await fetchGitHubAppWebhookDeliveryClient.redeliverDelivery("jwt-token", 17);
+  await fetchGitHubAppWebhookDeliveryClient.redeliverDelivery("jwt-token", "17");
 
   assert.deepEqual(calls, [
     {
@@ -144,4 +144,78 @@ test("fetchGitHubAppWebhookDeliveryClient normalizes delivery list pages and det
       authorization: "Bearer jwt-token"
     }
   ]);
+});
+
+test("fetchGitHubAppWebhookDeliveryClient preserves int64 delivery ids as strings", async (t) => {
+  const originalFetch = global.fetch;
+  const deliveryId = "3812264805761286144";
+
+  global.fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+
+    if (url.endsWith(`/${deliveryId}/attempts`)) {
+      return new Response(null, { status: 202 });
+    }
+
+    if (url.endsWith(`/${deliveryId}`)) {
+      return new Response(
+        `{
+          "id": ${deliveryId},
+          "guid": "guid-big",
+          "event": "issue_comment",
+          "delivered_at": "2026-04-02T11:30:00.000Z",
+          "redelivery": false,
+          "status": "FAILED",
+          "status_code": 500,
+          "request": {
+            "payload": {
+              "action": "created",
+              "repository": { "full_name": "acme/demo" },
+              "sender": { "login": "octocat" },
+              "installation": { "id": 42 },
+              "issue": { "number": 7 },
+              "comment": { "id": 99, "body": "@github-agent-orchestrator /approve" }
+            }
+          }
+        }`,
+        {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        }
+      );
+    }
+
+    return new Response(
+      `[
+        {
+          "id": ${deliveryId},
+          "guid": "guid-big",
+          "delivered_at": "2026-04-02T11:30:00.000Z",
+          "redelivery": false,
+          "status": "FAILED",
+          "status_code": 500
+        }
+      ]`,
+      {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      }
+    );
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const page = await fetchGitHubAppWebhookDeliveryClient.listDeliveries("jwt-token");
+  const detail = await fetchGitHubAppWebhookDeliveryClient.getDelivery("jwt-token", deliveryId);
+  await fetchGitHubAppWebhookDeliveryClient.redeliverDelivery("jwt-token", deliveryId);
+
+  assert.equal(page.deliveries[0]?.id, deliveryId);
+  assert.equal(detail.id, deliveryId);
 });
