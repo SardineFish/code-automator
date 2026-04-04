@@ -53,7 +53,6 @@ logging:
 tracking:
   stateFile: workflow-state.json
   logFile: workflow-runs.jsonl
-proxy: http://proxy.internal:8080
 workspace:
   enabled: true
   baseDir: /path/to/save/workspaces
@@ -87,7 +86,17 @@ This is the simplest end-to-end setup:
 
 Relative `tracking` paths and workspace base directories resolve from the YAML file location. The config loader preserves additional top-level provider sections, but the shipped startup wiring currently registers only `gh`.
 
-Set top-level `proxy` when outbound provider API traffic should go through an HTTP, HTTPS, or SOCKS5 proxy. The shared helper is initialized once at app startup, all production outbound provider calls use it, and inbound webhook handling keeps using direct local server traffic.
+## Outbound Proxy
+
+If outbound provider API traffic should go through a proxy, add a top-level `proxy` field such as:
+
+```yaml
+proxy: http://proxy.internal:8080
+# or
+proxy: socks5://proxy.internal:1080
+```
+
+The shared helper is initialized once at app startup, all production outbound provider calls use it, and inbound webhook handling keeps using direct local server traffic.
 
 ## Expanded Workflow Example
 
