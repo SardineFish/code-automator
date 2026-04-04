@@ -10,6 +10,7 @@ import {
   getHeader,
   getInstallationTokenProvider,
   readBody,
+  readGitHubPullRequestLinkedIssueId,
   readPayload,
   requireEnv,
   respond
@@ -112,6 +113,16 @@ export async function githubProvider(
     github.clientId,
     providerPayload.gate.installationId
   );
+  const linkedIssueId =
+    providerPayload.kind === "pr_issue_comment" ||
+    providerPayload.kind === "pr_review_comment" ||
+    providerPayload.kind === "pr_review"
+      ? await readGitHubPullRequestLinkedIssueId({
+          repoFullName: repo,
+          prId: providerPayload.prId,
+          token: installationToken
+        })
+      : undefined;
   const triggerEnv = { GH_TOKEN: installationToken };
   const reactionTarget = providerPayload.reactionTarget;
   const reportTarget = {
@@ -228,6 +239,7 @@ export async function githubProvider(
           event: "pr:at",
           user,
           repo,
+          issueId: linkedIssueId,
           prId: providerPayload.prId,
           content: providerPayload.mention.content
         });
@@ -237,6 +249,7 @@ export async function githubProvider(
         event: "pr:comment",
         user,
         repo,
+        issueId: linkedIssueId,
         prId: providerPayload.prId,
         content: providerPayload.body
       });
@@ -245,6 +258,7 @@ export async function githubProvider(
         event: "pr:review",
         user,
         repo,
+        issueId: linkedIssueId,
         prId: providerPayload.prId,
         prReview: providerPayload.prReview,
         content: providerPayload.content

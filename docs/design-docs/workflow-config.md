@@ -142,6 +142,7 @@ workflow:
 - `in` is a provider-defined plain object.
 - The core runtime does not require shared fields inside `in`.
 - Providers define the `in` object. The current GitHub provider keeps it minimal and emits only `event`, `user`, `repo`, and when relevant `issueId`, `prId`, `content`, `prReview`, and `command`.
+- For PR-scoped GitHub workflows, `issueId` is populated from GitHub's `closingIssuesReferences` result when GitHub resolves a linked issue for that PR.
 - Missing fields still fail fast in templates when referenced.
 
 ## Workspace Rules

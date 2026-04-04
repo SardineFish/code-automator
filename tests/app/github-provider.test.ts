@@ -293,6 +293,62 @@ test("GitHub provider emits pr:at for mentioned PR comments and review comments"
   assert.deepEqual(started, scenarios.map((scenario) => scenario.expectedCommand));
 });
 
+test("GitHub provider reuses the linked issue workspace key for PR comment and review workflows", async (t) => {
+  const { commands, linkedIssueCalls, reusableWorkspaceCalls, started, startedCwds, url } = await startGitHubApp(t, {
+    linkedIssueIds: {
+      "7": ["16"],
+      "8": ["16"]
+    },
+    customizeConfig(config) {
+      config.executors.codex.workspace = {
+        baseDir: "/tmp/reusable-issues",
+        key: "${in.repo}#${in.issueId}"
+      };
+    }
+  });
+  const linkedIssueOpenedPayload = issueOpenedPayload();
+
+  linkedIssueOpenedPayload.issue.number = 16;
+  linkedIssueOpenedPayload.issue.html_url = "https://github.com/acme/demo/issues/16";
+
+  const scenarios = [
+    {
+      eventName: "issues",
+      payload: linkedIssueOpenedPayload,
+      expectedCommand: "codex exec 'Plan issue 16'"
+    },
+    {
+      eventName: "issue_comment",
+      payload: issueCommentPayload("looks good", { pullRequest: true }),
+      expectedCommand: "codex exec 'Review PR 7: looks good'"
+    },
+    {
+      eventName: "pull_request_review",
+      payload: reviewPayload("", "changes_requested"),
+      expectedCommand: "codex exec 'Review PR 8: request-changes'"
+    }
+  ];
+
+  for (const scenario of scenarios) {
+    const response = await signedRequest(url, scenario.payload, scenario.eventName);
+    assert.equal(response.status, 202);
+  }
+
+  await waitForCondition(() => started.length === scenarios.length);
+  assert.deepEqual(commands, scenarios.map((scenario) => scenario.expectedCommand));
+  assert.deepEqual(linkedIssueCalls, ["7", "8"]);
+  assert.deepEqual(reusableWorkspaceCalls, [
+    "/tmp/reusable-issues:acme_demo#16",
+    "/tmp/reusable-issues:acme_demo#16",
+    "/tmp/reusable-issues:acme_demo#16"
+  ]);
+  assert.deepEqual(startedCwds, [
+    "/tmp/reusable-issues/acme_demo#16",
+    "/tmp/reusable-issues/acme_demo#16",
+    "/tmp/reusable-issues/acme_demo#16"
+  ]);
+});
+
 test("GitHub provider preserves multi-line PR mention content", async (t) => {
   const { commands, started, url } = await startGitHubApp(t, {
     customizeConfig(config) {
@@ -597,6 +653,7 @@ async function startGitHubApp(
   options?: {
     createQueuedRunError?: Error;
     customizeConfig?: (config: AppConfig) => void;
+    linkedIssueIds?: Record<string, string[]>;
     logSink?: LogSink;
   }
 ) {
@@ -618,8 +675,11 @@ async function startGitHubApp(
   const commentCalls: string[] = [];
   const envs: NodeJS.ProcessEnv[] = [];
   const installationTokenCalls: string[] = [];
+  const linkedIssueCalls: string[] = [];
   const reactionCalls: string[] = [];
+  const reusableWorkspaceCalls: string[] = [];
   const started: string[] = [];
+  const startedCwds: string[] = [];
   const terminalListeners = new Map<string, AppContextTerminalListeners>();
   let runCount = 0;
   const logSink = options?.logSink ?? createNoOpLogSink();
@@ -643,8 +703,34 @@ async function startGitHubApp(
 
     if (url === "https://api.github.com/graphql") {
       const body = JSON.parse(String(init?.body)) as {
-        variables?: { content?: string; subjectId?: string };
+        query?: string;
+        variables?: { content?: string; pr?: number; subjectId?: string };
       };
+
+      if (body.query?.includes("closingIssuesReferences")) {
+        const pr = String(body.variables?.pr ?? "");
+        linkedIssueCalls.push(pr);
+        const linkedIssues = (options?.linkedIssueIds?.[pr] ?? []).map((issueId) => ({ number: Number(issueId) }));
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              repository: {
+                pullRequest: {
+                  closingIssuesReferences: {
+                    nodes: linkedIssues
+                  }
+                }
+              }
+            }
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        );
+      }
+
       reactionCalls.push(
         `${init?.method ?? "GET"} ${url} ${body.variables?.content ?? ""} ${body.variables?.subjectId ?? ""}`.trim()
       );
@@ -681,6 +767,7 @@ async function startGitHubApp(
       async startDetached(command, options) {
         commands.push(command);
         envs.push(options.env);
+        startedCwds.push(options.cwd);
         runCount += 1;
         return {
           pid: 1000 + runCount,
@@ -698,8 +785,9 @@ async function startGitHubApp(
       async createRunWorkspace() {
         return "";
       },
-      async ensureReusableWorkspace() {
-        return "";
+      async ensureReusableWorkspace(baseDir, directoryName) {
+        reusableWorkspaceCalls.push(`${baseDir}:${directoryName}`);
+        return `${baseDir}/${directoryName}`;
       },
       async removeWorkspace() {}
     },
@@ -784,8 +872,11 @@ async function startGitHubApp(
     },
     envs,
     installationTokenCalls,
+    linkedIssueCalls,
     reactionCalls,
+    reusableWorkspaceCalls,
     started,
+    startedCwds,
     url: `http://127.0.0.1:${address.port}${github.url}`
   };
 }

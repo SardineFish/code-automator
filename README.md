@@ -125,6 +125,8 @@ After this is configured, a typical GitHub flow looks like this:
 4. Continue the PR loop.
    Later PR comments and PR reviews trigger `pr-review`, so the agent can react to review feedback and update the pull request.
 
+If GitHub resolves a linked issue for that pull request, PR workflows also receive `in.issueId`. That lets keyed workspace setups such as `${in.repo}#${in.issueId}` reuse the original issue workspace and agent session across PR follow-up runs.
+
 Webhook handling is still single-match. One incoming webhook request launches at most one workflow.
 
 The GitHub provider may submit more than one candidate event for the same request. For example, one issue comment can produce both a command event and a generic mention event. The workflow engine then walks the YAML list in order and runs only the first workflow whose `on` list matches any submitted event.
@@ -274,7 +276,8 @@ The redelivery worker stores its checkpoint next to the tracked run artifacts un
 - `${env.<NAME>}` resolves from the final executor environment after merge order `base process env -> executor env -> trigger env`, plus injected values such as `GH_TOKEN` when present.
 - `${env.NODE_BIN}` resolves to the current Node.js binary path from `process.execPath`, even if it is not otherwise present in the child process environment.
 - `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.*}` values are shell-escaped before command execution.
-- The current GitHub provider keeps `in` intentionally small. It emits `event`, `user`, `repo`, and when relevant `issueId`, `content`, and `command`.
+- The current GitHub provider keeps `in` intentionally small. It emits `event`, `user`, `repo`, and when relevant `issueId`, `prId`, `content`, `prReview`, and `command`.
+- For PR-scoped workflows, the GitHub provider populates `issueId` from GitHub's `closingIssuesReferences` result when GitHub resolves a linked issue for that PR.
 - The current GitHub provider emits `issue:at` and `pr:at` when the bot handle appears in issue or PR comments.
 - `gh.requireMention` defaults to `true`. Set it to `false` if you want `/plan` and `/approve` to work on issues without a leading bot mention.
 - Closed issues do not dispatch normal issue-comment or slash-command workflows.
