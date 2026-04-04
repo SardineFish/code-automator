@@ -150,6 +150,17 @@ test("createGitHubRedeliveryWorker skips already closed issues", async (t) => {
   assert.deepEqual(issueHarness.redeliveryCalls, []);
 });
 
+test("createGitHubRedeliveryWorker retries issue closures even when the issue is already closed", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createIssueClosedDetail(),
+    issueState: "closed"
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, ["11"]);
+});
+
 test("createGitHubRedeliveryWorker skips already closed pull requests", async (t) => {
   const harness = await createWorkerHarness(t, {
     detail: createReviewCommentDetail("needs work"),
@@ -170,6 +181,18 @@ test("createGitHubRedeliveryWorker skips issue comments that already have the bo
   await createGitHubRedeliveryWorker(harness.options).runOnce();
 
   assert.deepEqual(harness.redeliveryCalls, []);
+});
+
+test("createGitHubRedeliveryWorker retries issue closures even when the issue already has the bot eyes reaction", async (t) => {
+  const harness = await createWorkerHarness(t, {
+    detail: createIssueClosedDetail(),
+    issueState: "closed",
+    reactions: [{ content: "eyes", user: { login: "github-agent-orchestrator[bot]", type: "Bot" } }]
+  });
+
+  await createGitHubRedeliveryWorker(harness.options).runOnce();
+
+  assert.deepEqual(harness.redeliveryCalls, ["11"]);
 });
 
 test("createGitHubRedeliveryWorker skips issue openings that already have the bot eyes reaction", async (t) => {
@@ -353,6 +376,23 @@ function createIssueOpenedDetail(): GitHubAppWebhookDeliveryDetail {
     eventName: "issues",
     payload: {
       action: "opened",
+      repository: { full_name: "acme/demo" },
+      sender: { login: "octocat" },
+      installation: { id: 42 },
+      issue: {
+        number: 7,
+        body: "Need a plan"
+      }
+    }
+  };
+}
+
+function createIssueClosedDetail(): GitHubAppWebhookDeliveryDetail {
+  return {
+    ...createDeliverySummary("11", "guid-retry"),
+    eventName: "issues",
+    payload: {
+      action: "closed",
       repository: { full_name: "acme/demo" },
       sender: { login: "octocat" },
       installation: { id: 42 },

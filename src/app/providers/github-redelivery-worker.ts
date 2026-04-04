@@ -9,9 +9,8 @@ import type {
 } from "./github-redelivery-client.js";
 import { fetchGitHubAppWebhookDeliveryClient } from "./github-redelivery-client.js";
 import type { ResolvedGitHubProviderConfig } from "./github-config.js";
-import { readGitHubProviderEvent } from "./github-provider-event.js";
+import { readGitHubProviderEvent, type GitHubProviderEvent } from "./github-provider-event.js";
 import {
-  type GitHubReactionTarget,
   getGitHubAppJwtProvider,
   getInstallationTokenProvider,
   listCommentReactions,
@@ -161,7 +160,7 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
           kind: event.threadTarget.kind
         });
 
-        if (threadState === "closed") {
+        if (shouldSkipClosedThread(event, threadState)) {
           skippedByProviderFilter += 1;
           await settleGuidAndSave(state, candidate.guid, scanStartedAtIso);
           log.debug({
@@ -173,7 +172,7 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
           continue;
         }
 
-        if (await isAlreadyHandledDelivery(event.gate.repoFullName, event.reactionTarget, token, options.github.botHandle)) {
+        if (await isAlreadyHandledDelivery(event, token, options.github.botHandle)) {
           skippedAlreadyHandled += 1;
           await settleGuidAndSave(state, candidate.guid, scanStartedAtIso);
           log.debug({
@@ -286,18 +285,32 @@ export function getGitHubRedeliveryStateFilePath(stateFile: string): string {
   return path.join(parsed.dir, `${parsed.name}.runs`, "github-redelivery-state.json");
 }
 
+function shouldSkipClosedThread(event: GitHubProviderEvent, threadState: string | undefined): boolean {
+  if (threadState !== "closed") {
+    return false;
+  }
+
+  // A retried issues.closed delivery is expected to see the issue as closed.
+  return event.kind !== "issue_closed";
+}
+
 async function isAlreadyHandledDelivery(
-  repoFullName: string,
-  reactionTarget: GitHubReactionTarget | undefined,
+  event: GitHubProviderEvent,
   token: string,
   botHandle: string
 ): Promise<boolean> {
+  if (event.kind === "issue_closed") {
+    return false;
+  }
+
+  const reactionTarget = event.reactionTarget;
+
   if (!reactionTarget || reactionTarget.kind === "pull_request_review") {
     return false;
   }
 
   const reactions = await listCommentReactions({
-    repoFullName,
+    repoFullName: event.gate.repoFullName,
     subjectId: reactionTarget.subjectId,
     token,
     kind: reactionTarget.kind
