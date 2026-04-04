@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import type { LogSink } from "../types/logging.js";
-import type { AppContext, ProviderHandler } from "../types/runtime.js";
+import type { AppContext, AppServiceHandler, ProviderHandler } from "../types/runtime.js";
 import { createRequestDrainController, type RequestDrainController } from "./request-drain.js";
 import { UnknownProviderError } from "./create-app-context.js";
 
@@ -12,7 +12,45 @@ export interface HttpAppService {
   requestDrain: RequestDrainController;
 }
 
-export async function startHttpAppService(
+export interface ManagedHttpAppService {
+  service: AppServiceHandler;
+  getServer(): Server;
+  waitForIdleRequests(): Promise<void>;
+}
+
+export function createHttpAppService(
+  serverConfig: { host: string; port: number },
+  logSink: LogSink
+): ManagedHttpAppService {
+  let started: HttpAppService | undefined;
+
+  return {
+    async service(appContext) {
+      started = await startHttpAppService(serverConfig, logSink, appContext);
+      const startedService = started;
+
+      appContext.on("shutdown", async () => {
+        await startedService.requestDrain.stopAcceptingRequests();
+      });
+    },
+    getServer() {
+      if (!started) {
+        throw new Error("HTTP app service has not started.");
+      }
+
+      return started.server;
+    },
+    waitForIdleRequests() {
+      if (!started) {
+        return Promise.resolve();
+      }
+
+      return started.requestDrain.waitForIdleRequests();
+    }
+  };
+}
+
+async function startHttpAppService(
   serverConfig: { host: string; port: number },
   logSink: LogSink,
   appContext: AppContext

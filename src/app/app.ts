@@ -9,7 +9,7 @@ import {
   type WorkflowTrackingCleanup
 } from "./default-app-runtime.js";
 import { createAppContext } from "./create-app-context.js";
-import { startHttpAppService } from "./http-app-service.js";
+import { createHttpAppService } from "./http-app-service.js";
 
 export type AppOptions = AppRuntimeOverrides;
 export type { ProviderHandler } from "../types/runtime.js";
@@ -25,6 +25,7 @@ export function App(config: ServiceConfig, options: AppOptions = {}): AppBuilder
 }
 
 class AppBuilder {
+  readonly #httpService;
   readonly #providers = new Map<string, AnyProvider>();
   readonly #services: AppServiceHandler[] = [];
   #initializePromise?: Promise<WorkflowTrackingCleanup>;
@@ -32,7 +33,10 @@ class AppBuilder {
   constructor(
     private readonly config: ServiceConfig,
     private readonly runtime: AppRuntimeOptions
-  ) {}
+  ) {
+    this.#httpService = createHttpAppService(this.config.server, this.runtime.logSink);
+    this.service(this.#httpService.service);
+  }
 
   provider<TArgs extends unknown[] = unknown[], TResult = unknown>(
     key: string,
@@ -63,27 +67,21 @@ class AppBuilder {
     });
     managedApp.appContext.on("shutdown", trackingCleanup);
     let shutdownPromise: Promise<void> | undefined;
-    let httpService: Awaited<ReturnType<typeof startHttpAppService>> | undefined;
 
     try {
-      httpService = await startHttpAppService(
-        this.config.server,
-        this.runtime.logSink,
-        managedApp.appContext
-      );
-      const startedHttpService = httpService;
-      const shutdown = () => {
+      for (const service of this.#services) {
+        await service(managedApp.appContext);
+      }
+
+      const server = this.#httpService.getServer();
+      const shutdown = (): Promise<void> => {
         if (shutdownPromise) {
           return shutdownPromise;
         }
 
-        shutdownPromise = drainApp(startedHttpService.requestDrain, managedApp.shutdown);
+        shutdownPromise = shutdownApp(managedApp.shutdown, () => this.#httpService.waitForIdleRequests());
         return shutdownPromise;
       };
-
-      for (const service of this.#services) {
-        await service(managedApp.appContext);
-      }
 
       this.runtime.logSink.info({
         message: "server listening",
@@ -94,15 +92,11 @@ class AppBuilder {
       });
 
       return {
-        server: httpService.server,
+        server,
         shutdown
       };
     } catch (error) {
-      if (httpService) {
-        await drainApp(httpService.requestDrain, managedApp.shutdown);
-      } else {
-        await managedApp.shutdown();
-      }
+      await shutdownApp(managedApp.shutdown, () => this.#httpService.waitForIdleRequests());
       throw error;
     }
   }
@@ -113,11 +107,10 @@ class AppBuilder {
   }
 }
 
-async function drainApp(
-  requestDrain: import("./request-drain.js").RequestDrainController,
-  shutdownAppContext: () => Promise<void>
+async function shutdownApp(
+  shutdownAppContext: () => Promise<void>,
+  waitForIdleRequests: () => Promise<void>
 ): Promise<void> {
-  await requestDrain.stopAcceptingRequests();
   await shutdownAppContext();
-  await requestDrain.waitForIdleRequests();
+  await waitForIdleRequests();
 }

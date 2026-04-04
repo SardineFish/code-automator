@@ -210,6 +210,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Describe GitHub redelivery as a provider-owned app service instead of manual CLI startup wiring.
 - Keep the runtime operations docs aligned with app-owned shutdown of HTTP intake and background services.
 
+### Plan 33: Built-in HTTP service lifecycle alignment [done]
+
+- Register the built-in HTTP listener through the same `AppBuilder.service()` lifecycle path as the other app services.
+- Keep app shutdown semantics intact by stopping request intake through app shutdown handlers and then waiting for idle requests before resolving `AppLifecycle.shutdown()`.
+- Preserve exact-path dispatch and service-startup cleanup behavior while aligning the implementation with the documented runtime design.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.
