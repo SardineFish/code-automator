@@ -6,27 +6,24 @@ import {
   type GitHubRedeliveryWorkerOptions
 } from "./github-redelivery-worker.js";
 
-export interface CreateGitHubRedeliveryServiceOptions {
-  createWorker?: (options: GitHubRedeliveryWorkerOptions) => GitHubRedeliveryWorker;
-}
+export const githubRedeliveryService: AppServiceHandler = async (app) => {
+  await startGitHubRedeliveryService(app, createGitHubRedeliveryWorker);
+};
 
-export function createGitHubRedeliveryService(
-  options: CreateGitHubRedeliveryServiceOptions = {}
-): AppServiceHandler {
-  const createWorker = options.createWorker ?? createGitHubRedeliveryWorker;
+export async function startGitHubRedeliveryService(
+  app: Parameters<AppServiceHandler>[0],
+  createWorker: (options: GitHubRedeliveryWorkerOptions) => GitHubRedeliveryWorker
+): Promise<void> {
+  const github = resolveGitHubProviderConfig(app.config.gh);
+  const worker = createWorker({
+    github,
+    tracking: app.config.tracking,
+    env: app.env,
+    logSink: app.log
+  });
 
-  return async (app) => {
-    const github = resolveGitHubProviderConfig(app.config.gh);
-    const worker = createWorker({
-      github,
-      tracking: app.config.tracking,
-      env: app.env,
-      logSink: app.log
-    });
-
-    worker.start();
-    app.on("shutdown", async () => {
-      await worker.stop();
-    });
-  };
+  worker.start();
+  app.on("shutdown", async () => {
+    await worker.stop();
+  });
 }

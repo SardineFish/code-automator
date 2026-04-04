@@ -216,6 +216,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Keep app shutdown semantics intact by stopping request intake through app shutdown handlers and then waiting for idle requests before resolving `AppLifecycle.shutdown()`.
 - Preserve exact-path dispatch and service-startup cleanup behavior while aligning the implementation with the documented runtime design.
 
+### Plan 34: Direct GitHub redelivery service handler [done]
+
+- Replace the public GitHub redelivery service creator with a direct app service handler export so startup wiring can register it without a wrapper.
+- Keep the service logic provider-owned while preserving the same worker startup and shutdown behavior.
+- Update focused service coverage to exercise the direct handler path with an injected worker stub.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

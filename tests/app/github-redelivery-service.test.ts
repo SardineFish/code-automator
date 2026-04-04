@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createGitHubRedeliveryService } from "../../src/app/providers/github-redelivery-service.js";
+import { startGitHubRedeliveryService } from "../../src/app/providers/github-redelivery-service.js";
 import type { AppContext } from "../../src/types/runtime.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
 import { createNoOpLogSink } from "../fixtures/log-sink.js";
 
-test("createGitHubRedeliveryService starts the worker and stops it through app shutdown", async () => {
+test("startGitHubRedeliveryService starts the worker and stops it through app shutdown", async () => {
   const events: string[] = [];
   let shutdownHandler: (() => Promise<void>) | undefined;
   const config = createServiceConfig();
@@ -19,8 +19,12 @@ test("createGitHubRedeliveryService starts the worker and stops it through app s
     maxPerRun: 5
   };
 
-  const service = createGitHubRedeliveryService({
-    createWorker() {
+  await startGitHubRedeliveryService(
+    createAppContext(config, (handler) => {
+      shutdownHandler = handler;
+      return () => undefined;
+    }),
+    () => {
       return {
         start() {
           events.push("start");
@@ -31,12 +35,7 @@ test("createGitHubRedeliveryService starts the worker and stops it through app s
         }
       };
     }
-  });
-
-  await service(createAppContext(config, (handler) => {
-    shutdownHandler = handler;
-    return () => undefined;
-  }));
+  );
 
   assert.deepEqual(events, ["start"]);
   assert.ok(shutdownHandler);

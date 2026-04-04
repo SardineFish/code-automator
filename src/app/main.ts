@@ -6,8 +6,8 @@ import { App } from "./app.js";
 import { createCliShutdownCoordinator } from "./cli-shutdown.js";
 import { createAppRuntimeOptions, resolveBaseEnv } from "./default-app-runtime.js";
 import { resolveGitHubProviderConfig } from "./providers/github-config.js";
+import { githubRedeliveryService } from "./providers/github-redelivery-service.js";
 import { githubProvider } from "./providers/github-provider.js";
-import { createGitHubRedeliveryService } from "./providers/github-redelivery-service.js";
 import { requireEnv } from "./providers/github-utils.js";
 import { resolveConfigPath } from "./resolve-config-path.js";
 
@@ -25,7 +25,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
 
   const app = await App(runtimeConfig, runtimeOptions)
     .provider(github.url, githubProvider)
-    .service(createGitHubRedeliveryService())
+    .service(githubRedeliveryService)
     .listen();
   const shutdown = createCliShutdownCoordinator({
     app,
