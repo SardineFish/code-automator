@@ -156,7 +156,7 @@ test("readGitHubPullRequestLinkedIssueId uses the shared fetch helper dispatcher
     initFetchHelper(undefined);
   });
 
-  initFetchHelper("http://127.0.0.1:8080");
+  initFetchHelper({ proxy: "http://127.0.0.1:8080" });
 
   const issueId = await readGitHubPullRequestLinkedIssueId({
     repoFullName: "acme/demo",

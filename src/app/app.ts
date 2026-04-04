@@ -20,7 +20,7 @@ export interface AppLifecycle {
 }
 
 export function App(config: ServiceConfig, options: AppOptions = {}): AppBuilder {
-  initFetchHelper(config.proxy);
+  initFetchHelper(config.fetch);
   return new AppBuilder(config, createAppRuntimeOptions(config, options));
 }
 

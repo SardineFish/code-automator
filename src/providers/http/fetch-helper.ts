@@ -1,13 +1,17 @@
 import { socksDispatcher } from "fetch-socks";
 import { ProxyAgent, type Dispatcher } from "undici";
 
+import type { FetchConfig } from "../../types/config.js";
+
 const SUPPORTED_PROXY_PROTOCOLS = new Set(["http:", "https:", "socks5:"]);
+const DEFAULT_MAX_RETRY = 3;
 
 type FetchInput = Parameters<typeof globalThis.fetch>[0];
 type FetchInit = NonNullable<Parameters<typeof globalThis.fetch>[1]> & { dispatcher?: Dispatcher };
 
 let currentDispatcher: Dispatcher | undefined;
 let currentProxy: string | undefined;
+let currentMaxRetry = DEFAULT_MAX_RETRY;
 
 interface SocksProxyConfig {
   type: 5;
@@ -17,14 +21,25 @@ interface SocksProxyConfig {
   password?: string;
 }
 
-export function initFetchHelper(proxy: string | undefined): void {
+export function initFetchHelper(config: FetchConfig | undefined): void {
+  const proxy = config?.proxy;
+  const maxRetry = config?.maxRetry ?? DEFAULT_MAX_RETRY;
+
+  if (proxy === currentProxy && maxRetry === currentMaxRetry) {
+    return;
+  }
+
+  currentMaxRetry = maxRetry;
+
   if (proxy === currentProxy) {
     return;
   }
 
+  const nextDispatcher = proxy ? createProxyDispatcher(proxy) : undefined;
   const previousDispatcher = currentDispatcher;
+
   currentProxy = proxy;
-  currentDispatcher = proxy ? createProxyDispatcher(proxy) : undefined;
+  currentDispatcher = nextDispatcher;
 
   if (previousDispatcher) {
     void previousDispatcher.destroy().catch(() => {});
@@ -35,16 +50,10 @@ export function fetchHelper(
   input: FetchInput,
   init?: Parameters<typeof globalThis.fetch>[1]
 ): ReturnType<typeof globalThis.fetch> {
-  if (!currentDispatcher) {
-    return globalThis.fetch(input, init);
-  }
+  const dispatcher = currentDispatcher;
+  const maxRetry = currentMaxRetry;
 
-  const requestInit: FetchInit = {
-    ...(init ?? {}),
-    dispatcher: currentDispatcher
-  };
-
-  return globalThis.fetch(input, requestInit);
+  return fetchWithRetry(input, createRequestInit(init, dispatcher), maxRetry);
 }
 
 function createProxyDispatcher(proxy: string): Dispatcher {
@@ -81,4 +90,34 @@ function readPort(url: URL, fallbackPort: number): number {
   }
 
   return port;
+}
+
+function createRequestInit(
+  init: Parameters<typeof globalThis.fetch>[1],
+  dispatcher: Dispatcher | undefined
+): Parameters<typeof globalThis.fetch>[1] {
+  if (!dispatcher) {
+    return init;
+  }
+
+  return {
+    ...(init ?? {}),
+    dispatcher
+  } as FetchInit;
+}
+
+async function fetchWithRetry(
+  input: FetchInput,
+  init: Parameters<typeof globalThis.fetch>[1],
+  maxRetry: number
+): ReturnType<typeof globalThis.fetch> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await globalThis.fetch(input, init);
+    } catch (error) {
+      if (attempt >= maxRetry) {
+        throw error;
+      }
+    }
+  }
 }

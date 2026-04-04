@@ -58,6 +58,7 @@ test("parseServiceConfig returns ordered workflows and typed config", () => {
 
   assert.equal(parsed.configDir, "/tmp/configs");
   assert.equal(parsed.logging.level, "info");
+  assert.equal(parsed.fetch, undefined);
   assert.equal(parsed.workspace.baseDir, "/tmp/gao");
   assert.equal(parsed.tracking.stateFile, "/tmp/configs/state.json");
   assert.equal(parsed.tracking.logFile, "/tmp/configs/runs.jsonl");
@@ -87,13 +88,24 @@ test("parseServiceConfig accepts an explicit logging level", () => {
   assert.equal(parsed.logging.level, "debug");
 });
 
-test("parseServiceConfig accepts a shared top-level proxy URI", () => {
+test("parseServiceConfig accepts shared fetch settings", () => {
   const parsed = parseServiceConfig(
-    `${validConfig}\nproxy: socks5://proxy-user:proxy-pass@127.0.0.1:1080`,
+    `${validConfig}\nfetch:\n  proxy: socks5://proxy-user:proxy-pass@127.0.0.1:1080\n  maxRetry: 5`,
     "/tmp/configs/test.yml"
   );
 
-  assert.equal(parsed.proxy, "socks5://proxy-user:proxy-pass@127.0.0.1:1080");
+  assert.equal(parsed.fetch?.proxy, "socks5://proxy-user:proxy-pass@127.0.0.1:1080");
+  assert.equal(parsed.fetch?.maxRetry, 5);
+});
+
+test("parseServiceConfig defaults fetch maxRetry when it is omitted", () => {
+  const parsed = parseServiceConfig(
+    `${validConfig}\nfetch:\n  proxy: socks5://proxy-user:proxy-pass@127.0.0.1:1080`,
+    "/tmp/configs/test.yml"
+  );
+
+  assert.equal(parsed.fetch?.proxy, "socks5://proxy-user:proxy-pass@127.0.0.1:1080");
+  assert.equal(parsed.fetch?.maxRetry, undefined);
 });
 
 test("parseServiceConfig accepts executor workspace overrides", () => {
@@ -309,22 +321,42 @@ test("parseServiceConfig rejects unsupported logging levels", () => {
   });
 });
 
-test("parseServiceConfig rejects unsupported proxy schemes", () => {
-  const invalid = `${validConfig}\nproxy: ftp://127.0.0.1:21`;
+test("parseServiceConfig rejects invalid fetch config shapes", () => {
+  const invalid = `${validConfig}\nfetch: socks5://127.0.0.1:1080`;
 
   assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
     assert.ok(error instanceof ConfigError);
-    assert.match(error.message, /proxy: Expected a valid proxy URI with scheme http, https, or socks5\./);
+    assert.match(error.message, /fetch: Expected a mapping\./);
+    return true;
+  });
+});
+
+test("parseServiceConfig rejects unsupported proxy schemes", () => {
+  const invalid = `${validConfig}\nfetch:\n  proxy: ftp://127.0.0.1:21`;
+
+  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /fetch\.proxy: Expected a valid proxy URI with scheme http, https, or socks5\./);
     return true;
   });
 });
 
 test("parseServiceConfig rejects blank proxy values", () => {
-  const invalid = `${validConfig}\nproxy: "   "`;
+  const invalid = `${validConfig}\nfetch:\n  proxy: "   "`;
 
   assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
     assert.ok(error instanceof ConfigError);
-    assert.match(error.message, /proxy: Expected a non-empty proxy URI\./);
+    assert.match(error.message, /fetch\.proxy: Expected a non-empty proxy URI\./);
+    return true;
+  });
+});
+
+test("parseServiceConfig rejects negative fetch retry values", () => {
+  const invalid = `${validConfig}\nfetch:\n  maxRetry: -1`;
+
+  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /fetch\.maxRetry: Expected an integer greater than or equal to 0\./);
     return true;
   });
 });

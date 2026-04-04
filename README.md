@@ -86,14 +86,18 @@ This is the simplest end-to-end setup:
 
 Relative `tracking` paths and workspace base directories resolve from the YAML file location. The config loader preserves additional top-level provider sections, but the shipped startup wiring currently registers only `gh`.
 
-## Outbound Proxy
+## Outbound Fetch
 
-If outbound provider API traffic should go through a proxy, add a top-level `proxy` field such as:
+Shared outbound provider API traffic retries thrown network failures up to 3 times by default.
+To override the retry budget or route traffic through a proxy, add an optional top-level `fetch` section such as:
 
 ```yaml
-proxy: http://proxy.internal:8080
+fetch:
+  proxy: http://proxy.internal:8080
+  maxRetry: 5
 # or
-proxy: socks5://proxy.internal:1080
+fetch:
+  proxy: socks5://proxy.internal:1080
 ```
 
 The shared helper is initialized once at app startup, all production outbound provider calls use it, and inbound webhook handling keeps using direct local server traffic.

@@ -28,6 +28,11 @@ export interface LoggingConfig {
   level: RuntimeLogLevel;
 }
 
+export interface FetchConfig {
+  proxy?: string;
+  maxRetry?: number;
+}
+
 export interface WhitelistConfig {
   user: string[];
   repo: string[];
@@ -70,7 +75,7 @@ export interface AppConfig {
   [key: string]: unknown;
   server: ServerConfig;
   logging: LoggingConfig;
-  proxy?: string;
+  fetch?: FetchConfig;
   workspace: WorkspaceConfig;
   tracking: TrackingConfig;
   gh?: GitHubProviderConfig;

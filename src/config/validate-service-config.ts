@@ -4,6 +4,7 @@ import { type Document, isMap, isScalar } from "yaml";
 import type {
   ExecutorConfig,
   ExecutorWorkspaceOptions,
+  FetchConfig,
   LoggingConfig,
   ServerConfig,
   ServiceConfig,
@@ -34,7 +35,7 @@ export function validateServiceConfigDocument(
   const root = expectMap(document.contents, "root");
   const server = readServerConfig(root);
   const logging = readLoggingConfig(root);
-  const proxy = readOptionalProxy(root.get("proxy", true));
+  const fetch = readFetchConfig(root.get("fetch", true));
   const workspace = readWorkspaceConfig(root, baseDir);
   const tracking = readTrackingConfig(root, baseDir);
   const executors = readExecutors(root, baseDir);
@@ -46,7 +47,7 @@ export function validateServiceConfigDocument(
     configDir: baseDir,
     server,
     logging,
-    proxy,
+    fetch,
     workspace,
     tracking,
     executors,
@@ -92,6 +93,25 @@ function readLoggingConfig(root: ReturnType<typeof expectMap>): LoggingConfig {
 
 function isRuntimeLogLevel(value: string): value is LoggingConfig["level"] {
   return runtimeLogLevels.includes(value as LoggingConfig["level"]);
+}
+
+function readFetchConfig(node: unknown): FetchConfig | undefined {
+  if (!node) {
+    return undefined;
+  }
+
+  const fetch = expectMap(node, "fetch");
+  const proxy = readOptionalProxy(fetch.get("proxy", true), "fetch.proxy");
+  const maxRetry = readOptionalInteger(fetch.get("maxRetry", true), "fetch.maxRetry");
+
+  if (maxRetry !== undefined && maxRetry < 0) {
+    throw new ConfigError("fetch.maxRetry", "Expected an integer greater than or equal to 0.");
+  }
+
+  return {
+    proxy,
+    maxRetry
+  };
 }
 
 function readWorkspaceConfig(root: ReturnType<typeof expectMap>, baseDir: string): WorkspaceConfig {
@@ -206,19 +226,19 @@ function resolveConfigPath(filePath: string, baseDir: string): string {
   return path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
 }
 
-function readOptionalProxy(node: unknown): string | undefined {
+function readOptionalProxy(node: unknown, path: string): string | undefined {
   if (!node) {
     return undefined;
   }
 
   if (!isScalar(node) || typeof node.value !== "string") {
-    throw new ConfigError("proxy", "Expected a non-empty proxy URI.");
+    throw new ConfigError(path, "Expected a non-empty proxy URI.");
   }
 
   const proxy = node.value.trim();
 
   if (proxy === "") {
-    throw new ConfigError("proxy", "Expected a non-empty proxy URI.");
+    throw new ConfigError(path, "Expected a non-empty proxy URI.");
   }
 
   let url: URL;
@@ -226,11 +246,11 @@ function readOptionalProxy(node: unknown): string | undefined {
   try {
     url = new URL(proxy);
   } catch {
-    throw new ConfigError("proxy", "Expected a valid proxy URI with scheme http, https, or socks5.");
+    throw new ConfigError(path, "Expected a valid proxy URI with scheme http, https, or socks5.");
   }
 
   if (!SUPPORTED_PROXY_PROTOCOLS.has(url.protocol)) {
-    throw new ConfigError("proxy", "Expected a valid proxy URI with scheme http, https, or socks5.");
+    throw new ConfigError(path, "Expected a valid proxy URI with scheme http, https, or socks5.");
   }
 
   return proxy;
@@ -252,7 +272,7 @@ function readProviderSections(document: Document.Parsed): Record<string, unknown
 const CORE_TOP_LEVEL_KEYS = new Set([
   "server",
   "logging",
-  "proxy",
+  "fetch",
   "tracking",
   "workspace",
   "executors",
