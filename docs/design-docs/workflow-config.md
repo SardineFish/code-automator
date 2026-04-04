@@ -147,6 +147,7 @@ workflow:
 ## Workspace Rules
 
 - `workspace.enabled` remains the service-level default for whether executors allocate a workspace.
+- `workspace.baseDir`, string `executors.<name>.workspace`, and `executors.<name>.workspace.baseDir` resolve relative to the YAML config file directory when they are not already absolute.
 - `executors.<name>.workspace` overrides that default per executor:
   - omit it to inherit `workspace.enabled`
   - set `false` to disable workspace allocation

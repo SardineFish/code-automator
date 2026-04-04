@@ -33,9 +33,9 @@ export function validateServiceConfigDocument(
   const root = expectMap(document.contents, "root");
   const server = readServerConfig(root);
   const logging = readLoggingConfig(root);
-  const workspace = readWorkspaceConfig(root);
+  const workspace = readWorkspaceConfig(root, baseDir);
   const tracking = readTrackingConfig(root, baseDir);
-  const executors = readExecutors(root);
+  const executors = readExecutors(root, baseDir);
   const workflow = readWorkflow(root, new Set(Object.keys(executors)));
   const providerSections = readProviderSections(document);
 
@@ -90,12 +90,15 @@ function isRuntimeLogLevel(value: string): value is LoggingConfig["level"] {
   return runtimeLogLevels.includes(value as LoggingConfig["level"]);
 }
 
-function readWorkspaceConfig(root: ReturnType<typeof expectMap>): WorkspaceConfig {
+function readWorkspaceConfig(root: ReturnType<typeof expectMap>, baseDir: string): WorkspaceConfig {
   const workspace = expectMap(readRequiredNode(root, "workspace", "workspace"), "workspace");
 
   return {
     enabled: readBoolean(readRequiredNode(workspace, "enabled", "workspace.enabled"), "workspace.enabled"),
-    baseDir: readString(readRequiredNode(workspace, "baseDir", "workspace.baseDir"), "workspace.baseDir"),
+    baseDir: resolveConfigPath(
+      readString(readRequiredNode(workspace, "baseDir", "workspace.baseDir"), "workspace.baseDir"),
+      baseDir
+    ),
     cleanupAfterRun: readBoolean(
       readRequiredNode(workspace, "cleanupAfterRun", "workspace.cleanupAfterRun"),
       "workspace.cleanupAfterRun"
@@ -107,18 +110,18 @@ function readTrackingConfig(root: ReturnType<typeof expectMap>, baseDir: string)
   const tracking = expectMap(readRequiredNode(root, "tracking", "tracking"), "tracking");
 
   return {
-    stateFile: resolveTrackingPath(
+    stateFile: resolveConfigPath(
       readString(readRequiredNode(tracking, "stateFile", "tracking.stateFile"), "tracking.stateFile"),
       baseDir
     ),
-    logFile: resolveTrackingPath(
+    logFile: resolveConfigPath(
       readString(readRequiredNode(tracking, "logFile", "tracking.logFile"), "tracking.logFile"),
       baseDir
     )
   };
 }
 
-function readExecutors(root: ReturnType<typeof expectMap>): Record<string, ExecutorConfig> {
+function readExecutors(root: ReturnType<typeof expectMap>, baseDir: string): Record<string, ExecutorConfig> {
   const executors = expectMap(readRequiredNode(root, "executors", "executors"), "executors");
   const result: Record<string, ExecutorConfig> = {};
 
@@ -128,7 +131,11 @@ function readExecutors(root: ReturnType<typeof expectMap>): Record<string, Execu
     const definition = expectMap(item.value, executorPath);
     const run = readString(readRequiredNode(definition, "run", `${executorPath}.run`), `${executorPath}.run`);
     const env = readOptionalEnvMap(definition.get("env", true), `${executorPath}.env`);
-    const workspace = readOptionalExecutorWorkspace(definition.get("workspace", true), `${executorPath}.workspace`);
+    const workspace = readOptionalExecutorWorkspace(
+      definition.get("workspace", true),
+      `${executorPath}.workspace`,
+      baseDir
+    );
     const timeoutMs = readOptionalInteger(
       definition.get("timeoutMs", true),
       `${executorPath}.timeoutMs`
@@ -186,7 +193,7 @@ function readWorkflow(
   return workflows;
 }
 
-function resolveTrackingPath(filePath: string, baseDir: string): string {
+function resolveConfigPath(filePath: string, baseDir: string): string {
   return path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
 }
 
@@ -214,14 +221,16 @@ const CORE_TOP_LEVEL_KEYS = new Set([
 
 function readOptionalExecutorWorkspace(
   node: unknown,
-  path: string
+  path: string,
+  baseDir: string
 ): ExecutorConfig["workspace"] | undefined {
   if (!node) {
     return undefined;
   }
 
   if (!isMap(node)) {
-    return readOptionalBooleanOrString(node, path);
+    const workspace = readOptionalBooleanOrString(node, path);
+    return typeof workspace === "string" ? resolveConfigPath(workspace, baseDir) : workspace;
   }
 
   const workspace = expectMap(node, path);
@@ -230,7 +239,7 @@ function readOptionalExecutorWorkspace(
   const result: ExecutorWorkspaceOptions = {};
 
   if (baseDirNode) {
-    result.baseDir = readString(baseDirNode, `${path}.baseDir`);
+    result.baseDir = resolveConfigPath(readString(baseDirNode, `${path}.baseDir`), baseDir);
   }
 
   if (keyNode) {

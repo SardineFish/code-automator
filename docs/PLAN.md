@@ -150,6 +150,18 @@ This file defines the implementation order for the whole Coding Automator projec
 - Keep `${env.NODE_BIN}` available as a stable helper for the current Node.js binary path from `process.execPath`.
 - Let the Codex reuse wrapper accept the Codex executable or wrapper path as an explicit argument so operators can choose launchers per executor.
 
+### Plan 23: Absolute workspace paths and reset diagnostics [done]
+
+- Resolve service-level and executor-level workspace base directories relative to the YAML config file so `${workspace}` is always absolute when allocation is enabled.
+- Add focused config-loader coverage that locks in absolute workspace path behavior for relative config values.
+- Add reset-session diagnostics that log the resolved workspace path, metadata cleanup, cwd handling, and final deletion step to the run stderr artifact.
+
+### Plan 24: README workflow examples and safety guidance [done]
+
+- Reorganize the README so it starts with one simple issue-to-PR service example before introducing more advanced workflow patterns.
+- Add a clearer expanded workflow walkthrough that explains how GitHub issue and PR comments trigger the documented plan, approve, and review flows.
+- Document keyed workspace setup, host-security risks, and a minimal Docker executor example for operators who want stronger isolation.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

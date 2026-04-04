@@ -53,6 +53,7 @@ test("parseServiceConfig returns ordered workflows and typed config", () => {
   const parsed = parseServiceConfig(validConfig, "/tmp/configs/test.yml");
 
   assert.equal(parsed.logging.level, "info");
+  assert.equal(parsed.workspace.baseDir, "/tmp/gao");
   assert.equal(parsed.tracking.stateFile, "/tmp/configs/state.json");
   assert.equal(parsed.tracking.logFile, "/tmp/configs/runs.jsonl");
   assert.equal(parsed.workflow[0].name, "issue-plan");
@@ -91,6 +92,26 @@ test("parseServiceConfig accepts executor workspace overrides", () => {
 
   assert.equal(parsed.executors.codex.workspace, "/tmp/codex-workspaces");
   assert.equal(parsed.executors.claude.workspace, false);
+});
+
+test("parseServiceConfig resolves relative workspace directories from the config file location", () => {
+  const parsed = parseServiceConfig(
+    validConfig
+      .replace("baseDir: /tmp/gao", "baseDir: .runtime/workspaces")
+      .replace("    timeoutMs: 900000", "    timeoutMs: 900000\n    workspace: .runtime/issues")
+      .replace(
+        "    run: claude run ${prompt}",
+        "    run: claude run ${prompt}\n    workspace:\n      baseDir: .runtime/pull-requests\n      key: ${in.repo}#${in.issueId}"
+      ),
+    "/tmp/configs/test.yml"
+  );
+
+  assert.equal(parsed.workspace.baseDir, "/tmp/configs/.runtime/workspaces");
+  assert.equal(parsed.executors.codex.workspace, "/tmp/configs/.runtime/issues");
+  assert.deepEqual(parsed.executors.claude.workspace, {
+    baseDir: "/tmp/configs/.runtime/pull-requests",
+    key: "${in.repo}#${in.issueId}"
+  });
 });
 
 test("parseServiceConfig accepts executor workspace key mappings", () => {
