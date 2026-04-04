@@ -185,4 +185,4 @@ workflow:
 
 - The service starts with `npm start -- --config /path/to/service.yml`.
 - The shipped GitHub provider validates `gh.*` and requires `GITHUB_WEBHOOK_SECRET` plus `GITHUB_APP_PRIVATE_KEY_PATH` during startup.
-- When `gh.redelivery` is enabled, `main.ts` starts a second GitHub App polling loop that waits one configured interval before its first scan, then scans the last 3 days of app webhook deliveries, retries unresolved failures once per delivery GUID, and persists its checkpoint beside the tracked run artifacts.
+- When `gh.redelivery` is enabled, the GitHub provider registers a background app service that waits one configured interval before its first scan, then scans the last 3 days of app webhook deliveries, retries unresolved failures once per delivery GUID, and persists its checkpoint beside the tracked run artifacts.

@@ -204,6 +204,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Remove the explicit redelivery worker dependency from CLI shutdown so the app lifecycle owns that background service boundary.
 - Add focused coverage for the redelivery service lifecycle while keeping the worker behavior and GitHub provider behavior otherwise unchanged.
 
+### Plan 32: Runtime docs alignment [done]
+
+- Update the operator and design docs to describe the request-scoped `WorkflowContext` plus the app-level `AppContext` split accurately.
+- Describe GitHub redelivery as a provider-owned app service instead of manual CLI startup wiring.
+- Keep the runtime operations docs aligned with app-owned shutdown of HTTP intake and background services.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.
