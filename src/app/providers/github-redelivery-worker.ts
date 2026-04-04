@@ -30,9 +30,7 @@ interface GitHubRedeliveryState {
 }
 
 export interface GitHubRedeliveryWorker {
-  start(): void;
   runOnce(): Promise<void>;
-  stop(): Promise<void>;
 }
 
 export interface GitHubRedeliveryWorkerOptions {
@@ -49,9 +47,7 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
 
   if (!redelivery) {
     return {
-      start() {},
-      async runOnce() {},
-      async stop() {}
+      async runOnce() {}
     };
   }
 
@@ -63,48 +59,23 @@ export function createGitHubRedeliveryWorker(options: GitHubRedeliveryWorkerOpti
   const installationTokenProvider = getInstallationTokenProvider(privateKeyPath);
   const stateFilePath = getGitHubRedeliveryStateFilePath(options.tracking.stateFile);
   const log = options.logSink.child({ source: "gh-redelivery" });
-  let started = false;
   let inFlight: Promise<void> | undefined;
-  let timer: NodeJS.Timeout | undefined;
-  let stopped = false;
 
   return {
-    start() {
-      if (started || stopped) {
-        return;
-      }
-
-      started = true;
-      timer = setInterval(() => {
-        if (stopped) {
-          return;
-        }
-
-        void this.runOnce().catch((error) => logWorkerError(log, error));
-      }, redeliveryConfig.intervalSeconds * 1000);
-
-      timer.unref();
-    },
     runOnce() {
       if (inFlight) {
         return inFlight;
       }
 
-      inFlight = runWorker().finally(() => {
-        inFlight = undefined;
-      });
+      inFlight = runWorker()
+        .catch((error) => {
+          logWorkerError(log, error);
+        })
+        .finally(() => {
+          inFlight = undefined;
+        });
 
       return inFlight;
-    },
-    async stop() {
-      stopped = true;
-
-      if (timer) {
-        clearInterval(timer);
-        timer = undefined;
-      }
-
-      await inFlight;
     }
   };
 

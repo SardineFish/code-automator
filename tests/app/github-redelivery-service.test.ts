@@ -6,9 +6,16 @@ import type { AppContext } from "../../src/types/runtime.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
 import { createNoOpLogSink } from "../fixtures/log-sink.js";
 
-test("startGitHubRedeliveryService starts the worker and stops it through app shutdown", async () => {
-  const events: string[] = [];
-  let shutdownHandler: (() => Promise<void>) | undefined;
+test("startGitHubRedeliveryService registers the built-in interval scheduler", async () => {
+  let runCount = 0;
+  let scheduled:
+    | {
+        debugName: string;
+        intervalMs: number;
+        createJob: () => Promise<unknown>;
+        options: { mode?: "skip" | "delay" | "overlap"; runImmediately?: boolean } | undefined;
+      }
+    | undefined;
   const config = createServiceConfig();
   if (!config.gh) {
     throw new Error("Missing test GitHub config.");
@@ -20,34 +27,30 @@ test("startGitHubRedeliveryService starts the worker and stops it through app sh
   };
 
   await startGitHubRedeliveryService(
-    createAppContext(config, (handler) => {
-      shutdownHandler = handler;
+    createAppContext(config, (debugName, intervalMs, createJob, options) => {
+      scheduled = { debugName, intervalMs, createJob, options };
       return () => undefined;
     }),
     () => {
       return {
-        start() {
-          events.push("start");
-        },
-        async runOnce() {},
-        async stop() {
-          events.push("stop");
+        async runOnce() {
+          runCount += 1;
         }
       };
     }
   );
 
-  assert.deepEqual(events, ["start"]);
-  assert.ok(shutdownHandler);
-
-  await shutdownHandler?.();
-
-  assert.deepEqual(events, ["start", "stop"]);
+  assert.ok(scheduled);
+  assert.deepEqual(scheduled.debugName, "github-redelivery");
+  assert.deepEqual(scheduled.intervalMs, 30_000);
+  assert.deepEqual(scheduled.options, { mode: "skip" });
+  await scheduled.createJob();
+  assert.equal(runCount, 1);
 });
 
 function createAppContext(
   config = createServiceConfig(),
-  onShutdown: (handler: () => Promise<void>) => () => void
+  scheduleInterval: AppContext["scheduleInterval"]
 ): AppContext {
   return {
     config,
@@ -61,9 +64,17 @@ function createAppContext(
     getProvider() {
       throw new Error("should not read providers");
     },
+    trackJob(_debugName, job) {
+      return job;
+    },
+    scheduleInterval,
+    scheduleDelay() {
+      return () => undefined;
+    },
     on(eventName, handler) {
       assert.equal(eventName, "shutdown");
-      return onShutdown(handler);
+      void handler;
+      return () => undefined;
     }
   };
 }

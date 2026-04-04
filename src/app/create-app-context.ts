@@ -1,5 +1,7 @@
 import type { ServiceConfig } from "../types/config.js";
+import type { LogSink } from "../types/logging.js";
 import type { AnyProvider, AppContext } from "../types/runtime.js";
+import { createAppManagedJobs, type AppManagedJobs } from "./app-managed-jobs.js";
 import type { AppRuntimeOptions } from "./default-app-runtime.js";
 import { createWorkflowContext } from "./create-workflow-context.js";
 
@@ -23,6 +25,7 @@ export interface CreateAppContextOptions {
 export function createAppContext(options: CreateAppContextOptions): ManagedAppContext {
   const shutdownHandlers: Array<() => Promise<void>> = [];
   const appLog = options.runtime.logSink.child({ source: "app" });
+  const managedJobs = createAppManagedJobs(appLog);
   let shutdownPromise: Promise<void> | undefined;
 
   return {
@@ -42,6 +45,9 @@ export function createAppContext(options: CreateAppContextOptions): ManagedAppCo
 
         return provider as T;
       },
+      trackJob: managedJobs.trackJob,
+      scheduleInterval: managedJobs.scheduleInterval,
+      scheduleDelay: managedJobs.scheduleDelay,
       on(eventName, handler) {
         if (eventName !== "shutdown") {
           throw new Error(`Unsupported app event '${eventName}'.`);
@@ -62,7 +68,7 @@ export function createAppContext(options: CreateAppContextOptions): ManagedAppCo
         return shutdownPromise;
       }
 
-      shutdownPromise = runShutdownHandlers(shutdownHandlers, appLog);
+      shutdownPromise = runShutdownHandlers(shutdownHandlers, managedJobs, appLog);
       return shutdownPromise;
     }
   };
@@ -70,8 +76,10 @@ export function createAppContext(options: CreateAppContextOptions): ManagedAppCo
 
 async function runShutdownHandlers(
   handlers: Array<() => Promise<void>>,
-  appLog: { warn(entry: Record<string, unknown>): void }
+  managedJobs: AppManagedJobs,
+  appLog: Pick<LogSink, "warn">
 ): Promise<void> {
+  managedJobs.stopSchedulers();
   for (const handler of [...handlers]) {
     try {
       await handler();
@@ -82,4 +90,5 @@ async function runShutdownHandlers(
       });
     }
   }
+  await managedJobs.waitForTrackedJobsDuringShutdown();
 }

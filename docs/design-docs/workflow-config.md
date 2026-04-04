@@ -189,4 +189,5 @@ workflow:
 
 - The service starts with `npm start -- --config /path/to/service.yml`.
 - The shipped GitHub provider validates `gh.*` and requires `GITHUB_WEBHOOK_SECRET` plus `GITHUB_APP_PRIVATE_KEY_PATH` during startup.
-- When `gh.redelivery` is enabled, the GitHub provider registers a background app service that waits one configured interval before its first scan, then scans the last 3 days of app webhook deliveries, retries unresolved failures once per delivery GUID, and persists its checkpoint beside the tracked run artifacts.
+- When `gh.redelivery` is enabled, the GitHub provider registers a background app service that uses the built-in app scheduler, waits one configured interval before its first scan, then scans the last 3 days of app webhook deliveries, retries unresolved failures once per delivery GUID, and persists its checkpoint beside the tracked run artifacts.
+- App shutdown cancels pending app-managed scheduled waits, logs any tracked app jobs it is waiting on, logs a settle marker for each tracked job as it completes during shutdown, and still leaves detached workflow draining to the separate CLI `workflowTracker` boundary.

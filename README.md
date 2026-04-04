@@ -272,7 +272,7 @@ Without that extra `.codex/` mount, the container may lose its session state whe
 
 ## Optional Redelivery Polling
 
-`gh.redelivery` is provider-owned and defaults to `false`. When enabled, the service polls recent GitHub App webhook deliveries, retries unresolved failed delivery GUIDs once per GUID, and caps each scan at `maxPerRun` redelivery requests. The first automatic scan starts after `intervalSeconds` elapses, not immediately at process boot. On GitHub.com, only deliveries from the last 3 days are eligible for redelivery.
+`gh.redelivery` is provider-owned and defaults to `false`. When enabled, the service schedules app-managed GitHub App webhook delivery scans, retries unresolved failed delivery GUIDs once per GUID, and caps each scan at `maxPerRun` redelivery requests. The first automatic scan starts after `intervalSeconds` elapses, not immediately at process boot. On GitHub.com, only deliveries from the last 3 days are eligible for redelivery.
 
 ```yaml
 gh:
@@ -282,7 +282,7 @@ gh:
     maxPerRun: 20
 ```
 
-The redelivery service stores its checkpoint next to the tracked run artifacts under `tracking.stateFile`.
+The redelivery service stores its checkpoint next to the tracked run artifacts under `tracking.stateFile`, and app shutdown now cancels pending scheduled waits, logs any in-flight app-managed jobs it is waiting on, and logs a settle marker for each one as it completes.
 
 ## Configuration Notes
 
@@ -323,8 +323,8 @@ The redelivery service stores its checkpoint next to the tracked run artifacts u
 - Per-run wrapper, PID, result, stdout, and stderr files are stored next to the state file under a derived run-artifacts directory.
 - Keyed queued runs persist enough launch state to survive restart, and the next queued keyed run is released when the current owner reaches a terminal state.
 - `workspace.cleanupAfterRun` only removes ephemeral per-run workspaces. Reusable keyed workspaces are removed by reset or close workflows.
-- Press `Ctrl-C` once to stop accepting new HTTP requests, stop app-owned background services such as GitHub redelivery, and wait for tracked `queued` or `running` workflows to drain before exiting `0`. Press `Ctrl-C` again to exit immediately.
-- If `gh.redelivery` is enabled, the GitHub provider registers a background app service that scans recent GitHub App deliveries and requests redelivery for unresolved failures.
+- Press `Ctrl-C` once to stop accepting new HTTP requests, cancel pending app-managed scheduled waits such as GitHub redelivery, log any in-flight app-managed jobs still being awaited, log a done marker as each one settles, and then wait for tracked `queued` or `running` workflows to drain before exiting `0`. Press `Ctrl-C` again to exit immediately.
+- If `gh.redelivery` is enabled, the GitHub provider registers a background app service that schedules recent GitHub App delivery scans through the built-in app scheduler and requests redelivery for unresolved failures.
 - `logging.level: debug` adds inbound request metadata and clipped executor command and stdout previews to runtime logs.
 - Executors are command templates only; containerization, sandboxing, and repo checkout strategy stay operator-defined.
 

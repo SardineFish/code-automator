@@ -15,6 +15,12 @@ export async function startGitHubRedeliveryService(
   createWorker: (options: GitHubRedeliveryWorkerOptions) => GitHubRedeliveryWorker
 ): Promise<void> {
   const github = resolveGitHubProviderConfig(app.config.gh);
+  const redelivery = github.redelivery;
+
+  if (!redelivery) {
+    return;
+  }
+
   const worker = createWorker({
     github,
     tracking: app.config.tracking,
@@ -22,8 +28,7 @@ export async function startGitHubRedeliveryService(
     logSink: app.log
   });
 
-  worker.start();
-  app.on("shutdown", async () => {
-    await worker.stop();
+  app.scheduleInterval("github-redelivery", redelivery.intervalSeconds * 1000, () => worker.runOnce(), {
+    mode: "skip"
   });
 }

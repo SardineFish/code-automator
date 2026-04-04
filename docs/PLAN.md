@@ -227,6 +227,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Retry thrown outbound network failures in the shared `fetchHelper()` with a default retry budget of `3` while keeping HTTP response handling at the existing provider call sites.
 - Update regression coverage and operator docs so the new fetch config shape and retry behavior stay documented and locked in.
 
+### Plan 35: App-managed tracked jobs and built-in schedulers [done]
+
+- Add app-managed tracked-job registration plus built-in interval and delay schedulers on `AppContext` so app-owned async work participates in graceful shutdown without growing a generic worker abstraction.
+- Change app shutdown to cancel pending scheduler waits, log tracked jobs that are still being awaited, log a settle marker as each tracked job finishes during shutdown, and then wait for tracked jobs before the outer HTTP idle wait.
+- Refactor GitHub redelivery to use the built-in app scheduler, keep detached workflow draining on the existing CLI `workflowTracker` path, and update focused coverage and docs for the new lifecycle boundary.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.
