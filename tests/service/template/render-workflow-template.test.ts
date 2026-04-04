@@ -52,10 +52,11 @@ test("renderWorkflowPrompt rejects missing path segments", () => {
   });
 });
 
-test("renderExecutorCommand resolves prompt, workspace, workspaceKey, and env variables", () => {
+test("renderExecutorCommand resolves configDir, prompt, workspace, workspaceKey, and env variables", () => {
   const command = renderExecutorCommand(
-    "${env.NODE_BIN} runner.js --mode ${env.EXECUTOR} --token ${env.GH_TOKEN} -w ${workspace} --key ${workspaceKey} exec ${prompt}",
+    "${env.NODE_BIN} ${configDir}/runner.js --mode ${env.EXECUTOR} --token ${env.GH_TOKEN} -w ${workspace} --key ${workspaceKey} exec ${prompt}",
     {
+      configDir: "/opt/coding-automator",
       prompt: "Analyze issue",
       workspace: "/tmp/workspace-1",
       workspaceKey: "acme/demo#7",
@@ -69,7 +70,7 @@ test("renderExecutorCommand resolves prompt, workspace, workspaceKey, and env va
 
   assert.equal(
     command,
-    "/usr/local/bin/node runner.js --mode codex --token token-1 -w /tmp/workspace-1 --key acme/demo#7 exec Analyze issue"
+    "/usr/local/bin/node /opt/coding-automator/runner.js --mode codex --token token-1 -w /tmp/workspace-1 --key acme/demo#7 exec Analyze issue"
   );
 });
 
@@ -77,6 +78,7 @@ test("renderExecutorCommand rejects unsupported roots", () => {
   assert.throws(
     () =>
       renderExecutorCommand("echo ${in.issueId}", {
+        configDir: "/opt/coding-automator",
         prompt: "x",
         workspace: "",
         workspaceKey: "",
