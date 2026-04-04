@@ -144,12 +144,12 @@ workspace:
   cleanupAfterRun: false
 executors:
   codex:
-    run: ${env.NODE_BIN} ${configDir}/scripts/codex-reuse.js --workspace ${workspace}/code --state ${workspace}/.codex-reuse.json /path/to/codex ${prompt}
+    run: mkdir -p ${workspace}/code && ln -sfn ${workspace}/.codex-reuse.json ${workspace}/code/.codex-reuse.json && cd ${workspace}/code && ${env.NODE_BIN} ${configDir}/scripts/codex-reuse.js /path/to/codex ${prompt}
     workspace:
       baseDir: /var/lib/coding-automator/issues
       key: ${in.repo}#${in.issueId}
   codex-reset:
-    run: ${env.NODE_BIN} ${configDir}/scripts/reset-session.js --workspace ${workspace}/code --state ${workspace}/.codex-reuse.json
+    run: ${env.NODE_BIN} ${configDir}/scripts/reset-session.js ${workspace}
     workspace:
       baseDir: /var/lib/coding-automator/issues
       key: ${in.repo}#${in.issueId}
@@ -168,6 +168,8 @@ workflow:
 ```
 
 The reusable workspace directory name is derived directly from the rendered key after path-safe escaping, for example `acme/demo#7` becomes `acme_demo#7`.
+
+The example keeps the helper scripts unchanged. It creates `${workspace}/code` as the Codex working directory, symlinks `${workspace}/code/.codex-reuse.json` to `${workspace}/.codex-reuse.json`, and then launches `codex-reuse.js` from inside the checkout so wrapper-owned state stays at the workspace root.
 
 Use keyed workspaces when one issue needs follow-up runs against the same checkout or agent thread. For simple one-shot issue-to-PR automation, the non-keyed example above is easier to operate.
 

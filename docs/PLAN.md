@@ -170,7 +170,7 @@ This file defines the implementation order for the whole Coding Automator projec
 ### Plan 26: Config-relative helper scripts and split reusable-session state [done]
 
 - Add `${configDir}` as an executor command template variable that resolves to the loaded YAML config directory.
-- Let reusable-session helper scripts accept explicit workspace and state paths so repo checkouts and wrapper metadata can live in separate locations.
+- Keep reusable-session helper scripts unchanged while documenting a shell-managed split layout for repo checkouts and wrapper metadata.
 - Update the reusable-session docs and regression coverage so helper-script resolution no longer depends on the executor process `cwd`.
 
 ## Definition Of Done For Each Plan

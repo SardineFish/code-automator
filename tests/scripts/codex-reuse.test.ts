@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -116,39 +116,6 @@ test("codex-reuse resumes the saved session when metadata already exists", async
       args: ["exec", "resume", "--json", "thread-456", "Continue the issue"]
     }
   ]);
-});
-
-test("codex-reuse supports explicit workspace and state paths", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "gao-codex-explicit-"));
-  const workspacePath = path.join(root, "workspace", "code");
-  const stateFilePath = path.join(root, ".codex-reuse.json");
-  await writeFile(stateFilePath, JSON.stringify({ threadId: "thread-789" }, null, 2));
-
-  const spawned: Array<{ command: string; args: string[]; cwd: string }> = [];
-  const exitCode = await runCodexReuse(
-    ["--workspace", workspacePath, "--state", stateFilePath, CODEX_COMMAND, "Continue the issue"],
-    {
-      stdout: new PassThrough(),
-      stderr: new PassThrough(),
-      spawn(command: string, args: string[], options) {
-        spawned.push({ command, args, cwd: options.cwd });
-        return createFakeChild({
-          stdoutLines: ['{"type":"message","content":"done"}']
-        });
-      }
-    }
-  );
-
-  assert.equal(exitCode, 0);
-  assert.deepEqual(spawned, [
-    {
-      command: CODEX_COMMAND,
-      args: ["exec", "resume", "--json", "thread-789", "Continue the issue"],
-      cwd: workspacePath
-    }
-  ]);
-  await access(workspacePath);
-  assert.deepEqual(JSON.parse(await readFile(stateFilePath, "utf8")), { threadId: "thread-789" });
 });
 
 test("codex-reuse requires a codex command path before the prompt", async () => {
