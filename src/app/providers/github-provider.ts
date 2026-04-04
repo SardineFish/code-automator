@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { verifyWebhookSignature } from "../../service/security/verify-webhook-signature.js";
-import type { AppContext } from "../../types/runtime.js";
+import type { WorkflowContext } from "../../types/runtime.js";
 import { formatRuntimeErrorComment, formatWorkflowTerminalErrorComment } from "./github-provider-reporting.js";
 import { readGitHubProviderEvent } from "./github-provider-event.js";
 import {
@@ -53,9 +53,9 @@ import { resolveGitHubProviderConfig } from "./github-config.js";
  * content, prReview, and command.
  */
 export async function githubProvider(
+  context: WorkflowContext,
   request: IncomingMessage,
-  response: ServerResponse,
-  context: AppContext
+  response: ServerResponse
 ): Promise<void> {
   const github = resolveGitHubProviderConfig(context.config.gh);
 
@@ -132,7 +132,7 @@ export async function githubProvider(
     kind: providerPayload.threadTarget.kind
   };
 
-  function triggerWorkflow(name: Parameters<AppContext["trigger"]>[0], input: Record<string, unknown>): void {
+  function triggerWorkflow(name: Parameters<WorkflowContext["trigger"]>[0], input: Record<string, unknown>): void {
     context.trigger(name, {
       in: {
         ...input,

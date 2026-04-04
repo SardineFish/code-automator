@@ -185,6 +185,43 @@ This file defines the implementation order for the whole Coding Automator projec
 - Extend provider and redelivery regression coverage so standalone review comments still route while attached inline review comments no longer trigger separate workflows or mention handling.
 - Update operator docs to clarify that inline review comments bundled into a submitted review are handled only through the submitted `pull_request_review` event.
 
+### Plan 29: Rename request-scoped app context to workflow context [done]
+
+- Rename the current request-scoped runtime contract from `AppContext` to `WorkflowContext` without changing submission behavior.
+- Rename the request-scoped context factory from `createAppContext` to `createWorkflowContext` and keep call sites behaviorally identical.
+- Update runtime, tracking, and provider listener type names from `AppContext*` to `WorkflowContext*` so request-scoped semantics stay explicit.
+
+### Plan 30: App-level runtime context and shutdown wiring [done]
+
+- Add the new app-level `AppContext` with dynamic `getProvider<T>()`, multi-workflow creation, and shutdown-handler registration while keeping `WorkflowContext` as the request-scoped submission unit.
+- Refactor the shared app builder around generic providers and startup services, and route the built-in HTTP server through dynamic provider lookup by exact pathname.
+- Make app shutdown own request draining plus workflow-tracking cleanup, with focused tests for app-context behavior, HTTP dispatch, and shutdown cleanup.
+
+### Plan 31: Redelivery as a provider-owned app service [done]
+
+- Move GitHub redelivery startup from manual `main.ts` wiring into a provider-owned app service that starts from `service(...)` and registers `stop()` through `app.on("shutdown", ...)`.
+- Update shared startup wiring to register both the GitHub webhook provider and redelivery service through the app builder runtime path.
+- Remove the explicit redelivery worker dependency from CLI shutdown so the app lifecycle owns that background service boundary.
+- Add focused coverage for the redelivery service lifecycle while keeping the worker behavior and GitHub provider behavior otherwise unchanged.
+
+### Plan 32: Runtime docs alignment [done]
+
+- Update the operator and design docs to describe the request-scoped `WorkflowContext` plus the app-level `AppContext` split accurately.
+- Describe GitHub redelivery as a provider-owned app service instead of manual CLI startup wiring.
+- Keep the runtime operations docs aligned with app-owned shutdown of HTTP intake and background services.
+
+### Plan 33: Built-in HTTP service lifecycle alignment [done]
+
+- Register the built-in HTTP listener through the same `AppBuilder.service()` lifecycle path as the other app services.
+- Keep app shutdown semantics intact by stopping request intake through app shutdown handlers and then waiting for idle requests before resolving `AppLifecycle.shutdown()`.
+- Preserve exact-path dispatch and service-startup cleanup behavior while aligning the implementation with the documented runtime design.
+
+### Plan 34: Direct GitHub redelivery service handler [done]
+
+- Replace the public GitHub redelivery service creator with a direct app service handler export so startup wiring can register it without a wrapper.
+- Keep the service logic provider-owned while preserving the same worker startup and shutdown behavior.
+- Update focused service coverage to exercise the direct handler path with an injected worker stub.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

@@ -36,19 +36,19 @@ export interface WorkflowErrorEventPayload {
   error: Error;
 }
 
-export interface AppContextTerminalEventMap {
+export interface WorkflowContextTerminalEventMap {
   completed: WorkflowCompletedEventPayload;
   error: WorkflowErrorEventPayload;
 }
 
-export type AppContextTerminalEventName = keyof AppContextTerminalEventMap;
-export type AppContextTerminalListener<T extends AppContextTerminalEventName> = (
-  event: AppContextTerminalEventMap[T]
+export type WorkflowContextTerminalEventName = keyof WorkflowContextTerminalEventMap;
+export type WorkflowContextTerminalListener<T extends WorkflowContextTerminalEventName> = (
+  event: WorkflowContextTerminalEventMap[T]
 ) => void | Promise<void>;
 
-export interface AppContextTerminalListeners {
-  completed: AppContextTerminalListener<"completed">[];
-  error: AppContextTerminalListener<"error">[];
+export interface WorkflowContextTerminalListeners {
+  completed: WorkflowContextTerminalListener<"completed">[];
+  error: WorkflowContextTerminalListener<"error">[];
 }
 
 export interface OrchestrationResult {
@@ -75,14 +75,42 @@ export interface SubmittedTrigger {
   env: Record<string, string>;
 }
 
-export interface AppContext {
+export interface WorkflowContext {
   config: ServiceConfig;
   env: NodeJS.ProcessEnv;
   log: LogSink;
   trigger(name: TriggerKey, payload: TriggerSubmissionInput): void;
-  on<T extends AppContextTerminalEventName>(
+  on<T extends WorkflowContextTerminalEventName>(
     eventName: T,
-    listener: AppContextTerminalListener<T>
+    listener: WorkflowContextTerminalListener<T>
   ): () => void;
   submit(): Promise<OrchestrationResult>;
 }
+
+export type ProviderHandler<
+  TArgs extends unknown[] = unknown[],
+  TResult = unknown
+> = (ctx: WorkflowContext, ...args: TArgs) => Promise<TResult>;
+
+export type AnyProvider = ProviderHandler<any[], unknown>;
+
+export type ProviderArgs<T extends AnyProvider> =
+  T extends (ctx: WorkflowContext, ...args: infer A) => Promise<unknown>
+    ? A
+    : never;
+
+export type ProviderResult<T extends AnyProvider> =
+  T extends (ctx: WorkflowContext, ...args: unknown[]) => Promise<infer R>
+    ? R
+    : never;
+
+export interface AppContext {
+  config: ServiceConfig;
+  env: NodeJS.ProcessEnv;
+  log: LogSink;
+  createWorkflow(source: string): WorkflowContext;
+  getProvider<T extends AnyProvider>(key: string): T;
+  on(eventName: "shutdown", handler: () => Promise<void>): () => void;
+}
+
+export type AppServiceHandler = (app: AppContext) => Promise<void>;

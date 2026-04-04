@@ -15,11 +15,8 @@ test("createCliShutdownCoordinator drains active work in order on first SIGINT",
   const coordinator = createCliShutdownCoordinator({
     app: {
       server: {} as never,
-      async stopAcceptingRequests() {
-        events.push("stop-requests");
-      },
-      async waitForIdleRequests() {
-        events.push("wait-requests");
+      async shutdown() {
+        events.push("shutdown-app");
       }
     },
     workflowTracker: {
@@ -27,11 +24,6 @@ test("createCliShutdownCoordinator drains active work in order on first SIGINT",
         const count = activeCounts.shift() ?? 0;
         events.push(`count:${count}`);
         return count;
-      }
-    },
-    redeliveryWorker: {
-      async stop() {
-        events.push("stop-redelivery");
       }
     },
     sleep: async () => {
@@ -51,9 +43,7 @@ test("createCliShutdownCoordinator drains active work in order on first SIGINT",
   assert.equal(coordinator.getState(), "draining");
   assert.deepEqual(messages, [SIGINT_DRAIN_MESSAGE]);
   assert.deepEqual(events, [
-    "stop-requests",
-    "stop-redelivery",
-    "wait-requests",
+    "shutdown-app",
     "count:2",
     "sleep",
     "count:1",
@@ -70,11 +60,8 @@ test("createCliShutdownCoordinator forces immediate exit on second SIGINT", asyn
   const coordinator = createCliShutdownCoordinator({
     app: {
       server: {} as never,
-      async stopAcceptingRequests() {
-        events.push("stop-requests");
-      },
-      async waitForIdleRequests() {
-        events.push("wait-requests");
+      async shutdown() {
+        events.push("shutdown-app");
         await release.promise;
       }
     },
@@ -82,11 +69,6 @@ test("createCliShutdownCoordinator forces immediate exit on second SIGINT", asyn
       async getActiveRunCount() {
         events.push("count:0");
         return 0;
-      }
-    },
-    redeliveryWorker: {
-      async stop() {
-        events.push("stop-redelivery");
       }
     },
     writeLine() {},
@@ -105,7 +87,7 @@ test("createCliShutdownCoordinator forces immediate exit on second SIGINT", asyn
   release.resolve();
   await coordinator.waitForShutdown();
 
-  assert.deepEqual(events, ["stop-requests", "stop-redelivery", "wait-requests", "count:0"]);
+  assert.deepEqual(events, ["shutdown-app", "count:0"]);
   assert.deepEqual(exitCodes, [FORCED_SIGINT_EXIT_CODE]);
 });
 

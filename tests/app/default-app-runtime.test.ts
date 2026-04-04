@@ -125,3 +125,84 @@ test("initializeWorkflowTracking relaunches persisted queued runs before they ag
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("initializeWorkflowTracking cleanup stops future reconcile intervals", async () => {
+  let reconcileCount = 0;
+  const cleanup = await initializeWorkflowTracking(createServiceConfig(), {
+    processRunner: {
+      async run() {
+        throw new Error("should not run");
+      },
+      async startDetached() {
+        throw new Error("should not run");
+      },
+      isProcessRunning() {
+        return false;
+      },
+      async readDetachedResult() {
+        return null;
+      }
+    },
+    workspaceRepo: {
+      async createRunWorkspace() {
+        throw new Error("should not run");
+      },
+      async ensureReusableWorkspace() {
+        throw new Error("should not run");
+      },
+      async removeWorkspace() {}
+    },
+    workflowTracker: {
+      async initialize() {},
+      async createQueuedRun() {
+        throw new Error("should not run");
+      },
+      async getLaunchableQueuedRuns() {
+        return [];
+      },
+      subscribeTerminalEvents() {
+        return () => undefined;
+      },
+      async updateQueuedRun() {
+        throw new Error("should not run");
+      },
+      async getActiveRunCount() {
+        return 0;
+      },
+      async markRunning() {
+        throw new Error("should not run");
+      },
+      async markTerminal() {
+        throw new Error("should not run");
+      },
+      async reconcileActiveRuns() {
+        reconcileCount += 1;
+        return [];
+      }
+    },
+    logSink: createNoOpLogSink(),
+    baseEnv: {},
+    reconcileIntervalMs: 10
+  });
+
+  assert.equal(reconcileCount, 1);
+  await waitForCondition(() => reconcileCount > 1);
+  const stoppedAt = reconcileCount;
+
+  await cleanup();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(reconcileCount, stoppedAt);
+});
+
+async function waitForCondition(predicate: () => boolean): Promise<void> {
+  const startedAt = Date.now();
+
+  while (!predicate()) {
+    if (Date.now() - startedAt > 500) {
+      throw new Error("Condition did not become true in time.");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}

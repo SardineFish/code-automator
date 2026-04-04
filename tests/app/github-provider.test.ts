@@ -24,7 +24,7 @@ import { createServiceConfig } from "../fixtures/service-config.js";
 import type { AppConfig } from "../../src/types/config.js";
 import type { LogSink } from "../../src/types/logging.js";
 import type {
-  AppContextTerminalListeners,
+  WorkflowContextTerminalListeners,
   WorkflowCompletedEventPayload,
   WorkflowErrorEventPayload
 } from "../../src/types/runtime.js";
@@ -723,7 +723,7 @@ async function startGitHubApp(
   const reusableWorkspaceCalls: string[] = [];
   const started: string[] = [];
   const startedCwds: string[] = [];
-  const terminalListeners = new Map<string, AppContextTerminalListeners>();
+  const terminalListeners = new Map<string, WorkflowContextTerminalListeners>();
   let runCount = 0;
   const logSink = options?.logSink ?? createNoOpLogSink();
   const originalFetch = global.fetch;
@@ -951,7 +951,7 @@ async function signedRequest(url: string, payload: unknown, eventName: string) {
 }
 
 async function emitTrackedCompleted(
-  terminalListeners: Map<string, AppContextTerminalListeners>,
+  terminalListeners: Map<string, WorkflowContextTerminalListeners>,
   runId: string,
   payload: WorkflowCompletedEventPayload
 ): Promise<void> {
@@ -966,7 +966,7 @@ async function emitTrackedCompleted(
 }
 
 async function emitTrackedError(
-  terminalListeners: Map<string, AppContextTerminalListeners>,
+  terminalListeners: Map<string, WorkflowContextTerminalListeners>,
   runId: string,
   payload: WorkflowErrorEventPayload
 ): Promise<void> {

@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createAppContext } from "../../src/app/create-app-context.js";
+import { createAppContext, UnknownProviderError } from "../../src/app/create-app-context.js";
 import type { AppRuntimeOptions } from "../../src/app/default-app-runtime.js";
-import type { AppContextTerminalListeners } from "../../src/types/runtime.js";
+import type {
+  ProviderHandler,
+  WorkflowContext,
+  WorkflowContextTerminalListeners
+} from "../../src/types/runtime.js";
 import type { ActiveWorkflowRunRecord, WorkflowRunArtifacts } from "../../src/types/tracking.js";
-import { createNoOpLogSink } from "../fixtures/log-sink.js";
+import { createMemoryLogSink, createNoOpLogSink } from "../fixtures/log-sink.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
 
-function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
+function createQueuedRunRecord(runId: string, source: string): ActiveWorkflowRunRecord {
   const artifacts: WorkflowRunArtifacts = {
     runDir: `/tmp/${runId}`,
     wrapperScriptPath: `/tmp/${runId}/run.sh`,
@@ -23,7 +27,7 @@ function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
     status: "queued",
     createdAt: "2026-04-02T00:00:00.000Z",
     updatedAt: "2026-04-02T00:00:00.000Z",
-    source: "/gh-hook",
+    source,
     workflowName: "issue-plan",
     matchedTrigger: "issue:command:plan",
     executorName: "codex",
@@ -32,65 +36,113 @@ function createQueuedRunRecord(runId: string): ActiveWorkflowRunRecord {
   };
 }
 
-test("createAppContext registers completed and error listeners before submit", async () => {
-  const subscriptions: Array<{ runId: string; listeners: AppContextTerminalListeners }> = [];
-  const runtime = createRuntime(subscriptions);
-  const context = createAppContext("/gh-hook", createServiceConfig(), runtime);
-  const onCompleted = () => undefined;
-  const onError = () => undefined;
+test("createAppContext creates multiple independent workflows", async () => {
+  const queuedSources: string[] = [];
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime(queuedSources),
+    providers: new Map()
+  });
+  const first = managed.appContext.createWorkflow("/one");
+  const second = managed.appContext.createWorkflow("/two");
 
-  assert.equal(typeof context.on("completed", onCompleted), "function");
-  assert.equal(typeof context.on("error", onError), "function");
-
-  context.trigger("issue:command:plan", {
+  first.trigger("issue:command:plan", {
     in: { event: "issue:command:plan", issueId: "7" }
   });
+  second.trigger("issue:command:plan", {
+    in: { event: "issue:command:plan", issueId: "8" }
+  });
 
-  const result = await context.submit();
+  const [firstResult, secondResult] = await Promise.all([first.submit(), second.submit()]);
 
-  assert.equal(result.status, "matched");
-  assert.equal(subscriptions.length, 1);
-  assert.equal(subscriptions[0]?.runId, "run-1");
-  assert.equal(subscriptions[0]?.listeners.completed[0], onCompleted);
-  assert.equal(subscriptions[0]?.listeners.error[0], onError);
+  assert.equal(firstResult.status, "matched");
+  assert.equal(secondResult.status, "matched");
+  assert.deepEqual(queuedSources, ["/one", "/two"]);
 });
 
-test("createAppContext unsubscribe removes terminal listeners before submit", async () => {
-  const subscriptions: Array<{ runId: string; listeners: AppContextTerminalListeners }> = [];
-  const runtime = createRuntime(subscriptions);
-  const context = createAppContext("/gh-hook", createServiceConfig(), runtime);
-  const unsubscribe = context.on("error", () => undefined);
+test("createAppContext returns registered providers and trusts caller-declared typing", () => {
+  const provider: ProviderHandler<[string, number], string> = async (_workflow, key, count) =>
+    `${key}:${count}`;
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime(),
+    providers: new Map([["chat", provider]])
+  });
+
+  assert.equal(managed.appContext.getProvider<typeof provider>("chat"), provider);
+  assert.equal(
+    managed.appContext.getProvider<(ctx: WorkflowContext) => Promise<number>>("chat"),
+    provider
+  );
+});
+
+test("createAppContext throws UnknownProviderError for unknown provider keys", () => {
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime(),
+    providers: new Map()
+  });
+
+  assert.throws(() => managed.appContext.getProvider("missing"), UnknownProviderError);
+});
+
+test("createAppContext shutdown awaits handlers, supports unsubscribe, and isolates failures", async () => {
+  const records: Array<{ level: string; message?: string; errorMessage?: string }> = [];
+  const events: string[] = [];
+  const release = createDeferred<void>();
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime([], createMemoryLogSink(records as never[])),
+    providers: new Map()
+  });
+
+  managed.appContext.on("shutdown", async () => {
+    events.push("first");
+    await release.promise;
+    events.push("first-done");
+  });
+  const unsubscribe = managed.appContext.on("shutdown", async () => {
+    events.push("removed");
+  });
+  managed.appContext.on("shutdown", async () => {
+    events.push("boom");
+    throw new Error("shutdown failed");
+  });
+  managed.appContext.on("shutdown", async () => {
+    events.push("last");
+  });
 
   unsubscribe();
-  context.trigger("issue:command:plan", {
-    in: { event: "issue:command:plan", issueId: "7" }
+
+  let resolved = false;
+  const shutdownPromise = managed.shutdown().then(() => {
+    resolved = true;
   });
 
-  const result = await context.submit();
+  await Promise.resolve();
+  assert.equal(resolved, false);
 
-  assert.equal(result.status, "matched");
-  assert.deepEqual(subscriptions, []);
-});
+  release.resolve();
+  await shutdownPromise;
+  await managed.shutdown();
 
-test("createAppContext rejects terminal listeners after submit", async () => {
-  const subscriptions: Array<{ runId: string; listeners: AppContextTerminalListeners }> = [];
-  const runtime = createRuntime(subscriptions);
-  const context = createAppContext("/gh-hook", createServiceConfig(), runtime);
-
-  context.trigger("issue:command:plan", {
-    in: { event: "issue:command:plan", issueId: "7" }
-  });
-  await context.submit();
-
-  assert.throws(
-    () => context.on("error", () => undefined),
-    /Cannot register terminal listeners after submit\(\)\./
+  assert.deepEqual(events, ["first", "first-done", "boom", "last"]);
+  assert.ok(
+    records.some(
+      (record) =>
+        record.level === "warn" &&
+        record.message === "app shutdown handler failed" &&
+        record.errorMessage === "shutdown failed"
+    )
   );
 });
 
 function createRuntime(
-  subscriptions: Array<{ runId: string; listeners: AppContextTerminalListeners }>
+  queuedSources: string[] = [],
+  logSink = createNoOpLogSink()
 ): AppRuntimeOptions {
+  let runCount = 0;
+
   return {
     processRunner: {
       async run() {
@@ -120,23 +172,18 @@ function createRuntime(
     },
     workflowTracker: {
       async initialize() {},
-      async createQueuedRun() {
+      async createQueuedRun(context) {
+        runCount += 1;
+        queuedSources.push(context.source ?? "");
         return {
-          record: createQueuedRunRecord("run-1"),
+          record: createQueuedRunRecord(`run-${runCount}`, context.source ?? ""),
           shouldLaunchNow: false
         };
       },
       async getLaunchableQueuedRuns() {
         return [];
       },
-      subscribeTerminalEvents(runId, listeners) {
-        subscriptions.push({
-          runId,
-          listeners: {
-            completed: [...listeners.completed],
-            error: [...listeners.error]
-          }
-        });
+      subscribeTerminalEvents(_runId: string, _listeners: WorkflowContextTerminalListeners) {
         return () => undefined;
       },
       async updateQueuedRun() {
@@ -155,8 +202,19 @@ function createRuntime(
         return [];
       }
     },
-    logSink: createNoOpLogSink(),
+    logSink,
     baseEnv: {},
     reconcileIntervalMs: 0
   };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, resolve, reject };
 }

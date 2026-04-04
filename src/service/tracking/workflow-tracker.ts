@@ -1,6 +1,6 @@
 import type { WorkspaceConfig } from "../../types/config.js";
 import type { ProcessRunResult } from "../../types/execution.js";
-import type { AppContextTerminalListeners } from "../../types/runtime.js";
+import type { WorkflowContextTerminalListeners } from "../../types/runtime.js";
 import type {
   ActiveWorkflowRunRecord,
   CompletedWorkflowRunRecord,
@@ -19,7 +19,7 @@ export interface WorkflowTracker {
     details: { workspacePath: string; workspaceKey?: string; launch: WorkflowRunLaunchData }
   ): Promise<QueuedWorkflowRunTransition>;
   getLaunchableQueuedRuns(): Promise<ActiveWorkflowRunRecord[]>;
-  subscribeTerminalEvents(runId: string, listeners: AppContextTerminalListeners): () => void;
+  subscribeTerminalEvents(runId: string, listeners: WorkflowContextTerminalListeners): () => void;
   updateQueuedRun(runId: string, details: { workspacePath: string }): Promise<ActiveWorkflowRunRecord>;
   getActiveRunCount(): Promise<number>;
   markRunning(

@@ -3,7 +3,7 @@ import type { ProcessRunner } from "../../providers/process/process-runner.js";
 import type { LogSink } from "../../types/logging.js";
 import type { ServiceConfig } from "../../types/config.js";
 import type {
-  AppContextTerminalListeners,
+  WorkflowContextTerminalListeners,
   OrchestrationResult,
   SubmittedTrigger
 } from "../../types/runtime.js";
@@ -23,7 +23,7 @@ export interface ProcessTriggerSubmissionOptions {
   workflowTracker: WorkflowTracker;
   logSink?: LogSink;
   baseEnv?: NodeJS.ProcessEnv;
-  terminalListeners?: AppContextTerminalListeners;
+  terminalListeners?: WorkflowContextTerminalListeners;
 }
 
 export async function processTriggerSubmission(
@@ -163,6 +163,6 @@ function extractLogContext(triggers: SubmittedTrigger[]): Record<string, unknown
   return firstTrigger ? extractTriggerLogContext(firstTrigger.input) : {};
 }
 
-function hasTerminalListeners(listeners: AppContextTerminalListeners | undefined): boolean {
+function hasTerminalListeners(listeners: WorkflowContextTerminalListeners | undefined): boolean {
   return (listeners?.completed.length ?? 0) > 0 || (listeners?.error.length ?? 0) > 0;
 }

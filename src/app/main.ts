@@ -6,8 +6,8 @@ import { App } from "./app.js";
 import { createCliShutdownCoordinator } from "./cli-shutdown.js";
 import { createAppRuntimeOptions, resolveBaseEnv } from "./default-app-runtime.js";
 import { resolveGitHubProviderConfig } from "./providers/github-config.js";
+import { githubRedeliveryService } from "./providers/github-redelivery-service.js";
 import { githubProvider } from "./providers/github-provider.js";
-import { createGitHubRedeliveryWorker } from "./providers/github-redelivery-worker.js";
 import { requireEnv } from "./providers/github-utils.js";
 import { resolveConfigPath } from "./resolve-config-path.js";
 
@@ -23,24 +23,16 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
   requireEnv(baseEnv, "GITHUB_WEBHOOK_SECRET");
   requireEnv(baseEnv, "GITHUB_APP_PRIVATE_KEY_PATH");
 
-  const redeliveryWorker = createGitHubRedeliveryWorker({
-    github,
-    tracking: runtimeConfig.tracking,
-    env: baseEnv,
-    logSink
-  });
-
   const app = await App(runtimeConfig, runtimeOptions)
     .provider(github.url, githubProvider)
+    .service(githubRedeliveryService)
     .listen();
   const shutdown = createCliShutdownCoordinator({
     app,
-    workflowTracker: runtimeOptions.workflowTracker,
-    redeliveryWorker
+    workflowTracker: runtimeOptions.workflowTracker
   });
 
   process.on("SIGINT", () => shutdown.handleSigint());
-  redeliveryWorker.start();
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
