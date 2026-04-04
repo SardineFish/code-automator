@@ -2,11 +2,11 @@ import path from "node:path";
 import { type Document, isMap } from "yaml";
 
 import type {
-  AppConfig,
   ExecutorConfig,
   ExecutorWorkspaceOptions,
   LoggingConfig,
   ServerConfig,
+  ServiceConfig,
   TrackingConfig,
   WorkflowDefinition,
   WorkspaceConfig
@@ -30,7 +30,7 @@ import {
 export function validateServiceConfigDocument(
   document: Document.Parsed,
   baseDir: string
-): AppConfig {
+): ServiceConfig {
   const root = expectMap(document.contents, "root");
   const server = readServerConfig(root);
   const logging = readLoggingConfig(root);
@@ -42,6 +42,7 @@ export function validateServiceConfigDocument(
 
   return {
     ...providerSections,
+    configDir: baseDir,
     server,
     logging,
     workspace,

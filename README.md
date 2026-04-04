@@ -152,12 +152,12 @@ workspace:
   cleanupAfterRun: false
 executors:
   codex:
-    run: ${env.NODE_BIN} ./scripts/codex-reuse.js /path/to/codex ${prompt}
+    run: ${env.NODE_BIN} ${configDir}/scripts/codex-reuse.js /path/to/codex ${prompt}
     workspace:
       baseDir: /var/lib/coding-automator/issues
       key: ${in.repo}#${in.issueId}
   codex-reset:
-    run: ${env.NODE_BIN} ./scripts/reset-session.js ${workspace}
+    run: ${env.NODE_BIN} ${configDir}/scripts/reset-session.js ${workspace}
     workspace:
       baseDir: /var/lib/coding-automator/issues
       key: ${in.repo}#${in.issueId}
@@ -274,7 +274,7 @@ The redelivery worker stores its checkpoint next to the tracked run artifacts un
 - `workflow.<name>.prompt` may also use `${file:path}` to inline prompt text from another file.
 - Top-level prompt include paths resolve relative to the YAML config file, and nested prompt includes resolve relative to the including file.
 - Prompt files are expanded at config load, then the resulting prompt renders `${in.*}` variables when a workflow runs.
-- Executor commands may use `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.<NAME>}`.
+- Executor commands may use `${configDir}`, `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.<NAME>}`.
 - `executors.<name>.workspace` is optional:
   - omit it to inherit `workspace.enabled` and `workspace.baseDir`
   - set `false` to disable workspace allocation for that executor
@@ -284,9 +284,10 @@ The redelivery worker stores its checkpoint next to the tracked run artifacts un
 - `executors.<name>.workspace.key` renders from workflow input such as `${in.repo}#${in.issueId}`.
 - Runs that render the same `workspace.key` are serialized across executors and reuse one stable workspace directory.
 - Relative `workspace.baseDir`, string `executors.<name>.workspace`, and `executors.<name>.workspace.baseDir` values resolve from the YAML file location, so `${workspace}` is an absolute path when allocation is enabled.
+- `${configDir}` resolves to the directory containing the loaded YAML config file.
 - `${env.<NAME>}` resolves from the final executor environment after merge order `base process env -> executor env -> trigger env`, plus injected values such as `GH_TOKEN` when present.
 - `${env.NODE_BIN}` resolves to the current Node.js binary path from `process.execPath`, even if it is not otherwise present in the child process environment.
-- `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.*}` values are shell-escaped before command execution.
+- `${configDir}`, `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.*}` values are shell-escaped before command execution.
 - The current GitHub provider keeps `in` intentionally small. It emits `event`, `user`, `repo`, and when relevant `issueId`, `prId`, `content`, `prReview`, and `command`.
 - For PR-scoped workflows, the GitHub provider populates `issueId` from GitHub's `closingIssuesReferences` result when GitHub resolves a linked issue for that PR.
 - The current GitHub provider emits `issue:at` and `pr:at` when the bot handle appears in issue or PR comments.

@@ -167,7 +167,13 @@ This file defines the implementation order for the whole Coding Automator projec
 - Require Node.js 22 or newer in the package metadata so local installs and operators see the supported runtime clearly.
 - Update CI to run the check workflow on Node.js 22 so the documented support floor and automation stay aligned.
 
-### Plan 26: Workflow prompt file includes [done]
+### Plan 26: Config-relative helper scripts and split reusable-session state [done]
+
+- Add `${configDir}` as an executor command template variable that resolves to the loaded YAML config directory.
+- Keep reusable-session helper scripts unchanged while documenting config-relative helper-script invocation.
+- Update the reusable-session docs and regression coverage so helper-script resolution no longer depends on the executor process `cwd`.
+
+### Plan 27: Workflow prompt file includes [done]
 
 - Add `${file:path}` support for `workflow.<name>.prompt` so operators can move large prompt bodies into text files.
 - Resolve top-level include paths from the YAML config file and nested include paths from the including prompt file while preserving later `${in.*}` rendering.

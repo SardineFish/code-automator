@@ -1,7 +1,8 @@
-import type { AppConfig } from "../../src/types/config.js";
+import type { ServiceConfig } from "../../src/types/config.js";
 
-export function createServiceConfig(): AppConfig {
+export function createServiceConfig(): ServiceConfig {
   return {
+    configDir: "/tmp/github-agent-orchestrator/config",
     server: {
       host: "127.0.0.1",
       port: 3000

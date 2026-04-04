@@ -56,6 +56,7 @@ workflow:
 test("parseServiceConfig returns ordered workflows and typed config", () => {
   const parsed = parseServiceConfig(validConfig, "/tmp/configs/test.yml");
 
+  assert.equal(parsed.configDir, "/tmp/configs");
   assert.equal(parsed.logging.level, "info");
   assert.equal(parsed.workspace.baseDir, "/tmp/gao");
   assert.equal(parsed.tracking.stateFile, "/tmp/configs/state.json");
