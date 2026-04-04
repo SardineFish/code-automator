@@ -64,6 +64,34 @@ test("App starts registered services and runs their shutdown handlers", async ()
   assert.deepEqual(events, ["start", "shutdown"]);
 });
 
+test("App shutdown waits for tracked app jobs before resolving", async () => {
+  const release = createDeferred<void>();
+  const app = await App(createAppConfig(), createRuntimeOptions())
+    .provider<[IncomingMessage, ServerResponse], void>(
+      "/chat",
+      async (_context, _request, response) => {
+        response.statusCode = 204;
+        response.end();
+      }
+    )
+    .service(async (appContext) => {
+      appContext.trackJob("startup-job", release.promise);
+    })
+    .listen();
+
+  let shutdownResolved = false;
+  const shutdownPromise = app.shutdown().then(() => {
+    shutdownResolved = true;
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(shutdownResolved, false);
+
+  release.resolve();
+  await shutdownPromise;
+  assert.equal(shutdownResolved, true);
+});
+
 
 test("App returns 500 when a provider throws", async () => {
   const { shutdown, url } = await startApp(async () => {

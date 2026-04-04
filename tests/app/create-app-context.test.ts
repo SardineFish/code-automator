@@ -9,7 +9,11 @@ import type {
   WorkflowContextTerminalListeners
 } from "../../src/types/runtime.js";
 import type { ActiveWorkflowRunRecord, WorkflowRunArtifacts } from "../../src/types/tracking.js";
-import { createMemoryLogSink, createNoOpLogSink } from "../fixtures/log-sink.js";
+import {
+  createMemoryLogSink,
+  createNoOpLogSink,
+  type CapturedLogRecord
+} from "../fixtures/log-sink.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
 
 function createQueuedRunRecord(runId: string, source: string): ActiveWorkflowRunRecord {
@@ -137,6 +141,299 @@ test("createAppContext shutdown awaits handlers, supports unsubscribe, and isola
   );
 });
 
+test("createAppContext trackJob preserves resolve and reject behavior", async () => {
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime(),
+    providers: new Map()
+  });
+  const value = managed.appContext.trackJob("sync-resolve", Promise.resolve("ok"));
+  const error = managed.appContext.trackJob("sync-reject", Promise.reject(new Error("boom")));
+
+  assert.equal(await value, "ok");
+  await assert.rejects(error, /boom/);
+  await managed.shutdown();
+});
+
+test("createAppContext validates app-managed job names and delays", () => {
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime(),
+    providers: new Map()
+  });
+
+  assert.throws(
+    () => managed.appContext.trackJob("   ", Promise.resolve()),
+    /App job debugName must be a non-empty string/
+  );
+  assert.throws(
+    () => managed.appContext.scheduleInterval("job", 0, async () => undefined),
+    /Interval milliseconds must be greater than 0/
+  );
+  assert.throws(
+    () => managed.appContext.scheduleInterval("   ", 10, async () => undefined),
+    /App job debugName must be a non-empty string/
+  );
+  assert.throws(
+    () => managed.appContext.scheduleDelay("job", 0, async () => undefined),
+    /Delay milliseconds must be greater than 0/
+  );
+  assert.throws(
+    () => managed.appContext.scheduleDelay("   ", 10, async () => undefined),
+    /App job debugName must be a non-empty string/
+  );
+});
+
+test("createAppContext shutdown logs waiting tracked jobs, aggregates duplicates, and logs settle markers", async () => {
+  const records: CapturedLogRecord[] = [];
+  const alphaOne = createDeferred<void>();
+  const alphaTwo = createDeferred<void>();
+  const beta = createDeferred<void>();
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime([], createMemoryLogSink(records)),
+    providers: new Map()
+  });
+
+  managed.appContext.trackJob("alpha", alphaOne.promise);
+  managed.appContext.trackJob("alpha", alphaTwo.promise);
+  managed.appContext.trackJob("beta", beta.promise);
+
+  let shutdownResolved = false;
+  const shutdownPromise = managed.shutdown().then(() => {
+    shutdownResolved = true;
+  });
+
+  await waitForCondition(
+    () =>
+      records.filter((record) => record.message === "waiting for tracked app job during shutdown")
+        .length === 2
+  );
+  assert.equal(shutdownResolved, false);
+  assert.deepEqual(
+    records
+      .filter((record) => record.message === "waiting for tracked app job during shutdown")
+      .map((record) => ({ debugName: record.debugName, count: record.count })),
+    [
+      { debugName: "alpha", count: 2 },
+      { debugName: "beta", count: 1 }
+    ]
+  );
+
+  alphaOne.resolve();
+  await waitForCondition(
+    () =>
+      records.filter(
+        (record) =>
+          record.message === "tracked app job settled during shutdown" && record.debugName === "alpha"
+      ).length === 1
+  );
+  assert.equal(shutdownResolved, false);
+
+  beta.resolve();
+  await waitForCondition(
+    () =>
+      records.filter(
+        (record) =>
+          record.message === "tracked app job settled during shutdown" && record.debugName === "beta"
+      ).length === 1
+  );
+  assert.equal(shutdownResolved, false);
+
+  alphaTwo.resolve();
+  await shutdownPromise;
+  assert.equal(shutdownResolved, true);
+  assert.equal(
+    records.filter((record) => record.message === "tracked app job settled during shutdown").length,
+    3
+  );
+});
+
+test("createAppContext scheduleInterval defaults to fixed-period skip mode and stop prevents future ticks", async () => {
+  const events: string[] = [];
+  const releases: Array<ReturnType<typeof createDeferred<void>>> = [];
+  let started = 0;
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime(),
+    providers: new Map()
+  });
+  const stop = managed.appContext.scheduleInterval("skip-job", 25, async () => {
+    started += 1;
+    const jobId = started;
+    const release = createDeferred<void>();
+    releases.push(release);
+    events.push(`start-${jobId}`);
+    await release.promise;
+    events.push(`done-${jobId}`);
+  });
+
+  await waitForCondition(() => events.includes("start-1"));
+  await sleep(35);
+  assert.equal(events.filter((event) => event.startsWith("start-")).length, 1);
+
+  releases[0]?.resolve();
+  await waitForCondition(() => events.includes("done-1"));
+  await waitForCondition(() => events.includes("start-2"));
+
+  stop();
+  releases[1]?.resolve();
+  await waitForCondition(() => events.includes("done-2"));
+  const startedBeforeWait = events.filter((event) => event.startsWith("start-")).length;
+
+  await sleep(60);
+  assert.equal(events.filter((event) => event.startsWith("start-")).length, startedBeforeWait);
+  await managed.shutdown();
+});
+
+test("createAppContext scheduleInterval supports fixed-delay mode with immediate first run", async () => {
+  const events: string[] = [];
+  const releases: Array<ReturnType<typeof createDeferred<void>>> = [];
+  let started = 0;
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime(),
+    providers: new Map()
+  });
+  const stop = managed.appContext.scheduleInterval(
+    "delay-job",
+    20,
+    async () => {
+      started += 1;
+      const jobId = started;
+      const release = createDeferred<void>();
+      releases.push(release);
+      events.push(`start-${jobId}`);
+      await release.promise;
+      events.push(`done-${jobId}`);
+    },
+    { mode: "delay", runImmediately: true }
+  );
+
+  await waitForCondition(() => events.includes("start-1"));
+  await sleep(30);
+  assert.deepEqual(events, ["start-1"]);
+
+  releases[0]?.resolve();
+  await waitForCondition(() => events.includes("done-1"));
+  await sleep(10);
+  assert.deepEqual(events, ["start-1", "done-1"]);
+  await waitForCondition(() => events.includes("start-2"));
+
+  stop();
+  releases[1]?.resolve();
+  await waitForCondition(() => events.includes("done-2"));
+  await sleep(35);
+  assert.equal(events.filter((event) => event.startsWith("start-")).length, 2);
+  await managed.shutdown();
+});
+
+test("createAppContext scheduleInterval supports overlapping runs", async () => {
+  const releases: Array<ReturnType<typeof createDeferred<void>>> = [];
+  let active = 0;
+  let maxActive = 0;
+  let started = 0;
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime(),
+    providers: new Map()
+  });
+  const stop = managed.appContext.scheduleInterval(
+    "overlap-job",
+    20,
+    async () => {
+      started += 1;
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      const release = createDeferred<void>();
+      releases.push(release);
+      await release.promise;
+      active -= 1;
+    },
+    { mode: "overlap" }
+  );
+
+  await waitForCondition(() => started >= 2 && maxActive >= 2);
+  stop();
+  for (const release of releases) {
+    release.resolve();
+  }
+
+  await managed.shutdown();
+  assert.ok(started >= 2);
+  assert.ok(maxActive >= 2);
+});
+
+test("createAppContext scheduleDelay runs once and can be canceled before firing", async () => {
+  let ran = 0;
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime(),
+    providers: new Map()
+  });
+  const stop = managed.appContext.scheduleDelay("later", 20, async () => {
+    ran += 1;
+  });
+
+  await sleep(10);
+  stop();
+  await sleep(30);
+  assert.equal(ran, 0);
+
+  managed.appContext.scheduleDelay("later", 20, async () => {
+    ran += 1;
+  });
+  await waitForCondition(() => ran === 1);
+  await sleep(30);
+  assert.equal(ran, 1);
+  await managed.shutdown();
+});
+
+test("createAppContext scheduleDelay and scheduleInterval pending waits are canceled during shutdown", async () => {
+  let runs = 0;
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime(),
+    providers: new Map()
+  });
+
+  managed.appContext.scheduleDelay("delayed", 40, async () => {
+    runs += 1;
+  });
+  managed.appContext.scheduleInterval("interval", 40, async () => {
+    runs += 1;
+  });
+
+  await managed.shutdown();
+  await sleep(70);
+  assert.equal(runs, 0);
+});
+
+test("createAppContext logs detached scheduler failures at warn", async () => {
+  const records: CapturedLogRecord[] = [];
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime([], createMemoryLogSink(records)),
+    providers: new Map()
+  });
+
+  managed.appContext.scheduleDelay("failing-job", 20, async () => {
+    throw new Error("scheduler failed");
+  });
+
+  await waitForCondition(
+    () =>
+      records.some(
+        (record) =>
+          record.level === "warn" &&
+          record.message === "scheduled app job failed" &&
+          record.debugName === "failing-job" &&
+          record.errorMessage === "scheduler failed"
+      )
+  );
+  await managed.shutdown();
+});
+
 function createRuntime(
   queuedSources: string[] = [],
   logSink = createNoOpLogSink()
@@ -217,4 +514,19 @@ function createDeferred<T>() {
   });
 
   return { promise, resolve, reject };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForCondition(condition: () => boolean, timeoutMs = 500): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (!condition()) {
+    if (Date.now() >= deadline) {
+      throw new Error("Timed out waiting for condition.");
+    }
+    await sleep(5);
+  }
 }

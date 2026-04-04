@@ -104,12 +104,31 @@ export type ProviderResult<T extends AnyProvider> =
     ? R
     : never;
 
+export type AppJobScheduleMode = "skip" | "delay" | "overlap";
+
+export interface AppJobIntervalOptions {
+  mode?: AppJobScheduleMode;
+  runImmediately?: boolean;
+}
+
 export interface AppContext {
   config: ServiceConfig;
   env: NodeJS.ProcessEnv;
   log: LogSink;
   createWorkflow(source: string): WorkflowContext;
   getProvider<T extends AnyProvider>(key: string): T;
+  trackJob<TResult>(debugName: string, job: Promise<TResult>): Promise<TResult>;
+  scheduleInterval(
+    debugName: string,
+    intervalMs: number,
+    createJob: () => Promise<unknown>,
+    options?: AppJobIntervalOptions
+  ): () => void;
+  scheduleDelay(
+    debugName: string,
+    delayMs: number,
+    createJob: () => Promise<unknown>
+  ): () => void;
   on(eventName: "shutdown", handler: () => Promise<void>): () => void;
 }
 
