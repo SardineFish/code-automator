@@ -59,7 +59,7 @@ workflow:
       - issue:open
       - issue:command:plan
     use: codex
-    prompt: Check issue ${in.issueId}. Make an implementation plan and comment on this issue. Do not write any code.
+    prompt: ${file:prompt/issue-plan.txt}
   issue-implement:
     on:
       - issue:command:approve
@@ -123,6 +123,10 @@ workflow:
 ## Interpolation Rules
 
 - Workflow prompts may use `${in.*}` variables.
+- `workflow.<name>.prompt` may also use `${file:path}` to inline another prompt file.
+- Top-level prompt include paths resolve relative to the YAML config file directory.
+- Nested prompt include paths resolve relative to the including file.
+- Prompt files are expanded at config load, and the expanded prompt still renders `${in.*}` variables later at workflow execution.
 - Executor commands may use `${configDir}`, `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.<NAME>}`.
 - `${configDir}` resolves to the directory containing the loaded service YAML config.
 - `${prompt}` is the rendered workflow prompt.

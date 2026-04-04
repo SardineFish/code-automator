@@ -173,7 +173,13 @@ This file defines the implementation order for the whole Coding Automator projec
 - Keep reusable-session helper scripts unchanged while documenting config-relative helper-script invocation.
 - Update the reusable-session docs and regression coverage so helper-script resolution no longer depends on the executor process `cwd`.
 
-### Plan 27: Ignore PR review comments attached to a submitted review [done]
+### Plan 27: Workflow prompt file includes [done]
+
+- Add `${file:path}` support for `workflow.<name>.prompt` so operators can move large prompt bodies into text files.
+- Resolve top-level include paths from the YAML config file and nested include paths from the including prompt file while preserving later `${in.*}` rendering.
+- Add focused config-loader coverage plus operator docs for nested includes, missing files, and include cycles.
+
+### Plan 28: Ignore PR review comments attached to a submitted review [done]
 
 - Keep the duplication fix provider-owned by ignoring `pull_request_review_comment` deliveries that include `comment.pull_request_review_id`.
 - Extend provider and redelivery regression coverage so standalone review comments still route while attached inline review comments no longer trigger separate workflows or mention handling.
