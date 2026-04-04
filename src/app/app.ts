@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { initFetchHelper } from "../providers/http/fetch-helper.js";
 import type { ServiceConfig } from "../types/config.js";
 import type { LogSink } from "../types/logging.js";
 import type { AppContext } from "../types/runtime.js";
@@ -17,6 +18,7 @@ export type ProviderHandler = (
   context: AppContext
 ) => Promise<void> | void;
 export function App(config: ServiceConfig, options: AppOptions = {}): AppBuilder {
+  initFetchHelper(config.proxy);
   return new AppBuilder(config, createAppRuntimeOptions(config, options));
 }
 

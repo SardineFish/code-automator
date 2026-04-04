@@ -1,5 +1,5 @@
 import path from "node:path";
-import { type Document, isMap } from "yaml";
+import { type Document, isMap, isScalar } from "yaml";
 
 import type {
   ExecutorConfig,
@@ -34,6 +34,7 @@ export function validateServiceConfigDocument(
   const root = expectMap(document.contents, "root");
   const server = readServerConfig(root);
   const logging = readLoggingConfig(root);
+  const proxy = readOptionalProxy(root.get("proxy", true));
   const workspace = readWorkspaceConfig(root, baseDir);
   const tracking = readTrackingConfig(root, baseDir);
   const executors = readExecutors(root, baseDir);
@@ -45,6 +46,7 @@ export function validateServiceConfigDocument(
     configDir: baseDir,
     server,
     logging,
+    proxy,
     workspace,
     tracking,
     executors,
@@ -204,6 +206,36 @@ function resolveConfigPath(filePath: string, baseDir: string): string {
   return path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
 }
 
+function readOptionalProxy(node: unknown): string | undefined {
+  if (!node) {
+    return undefined;
+  }
+
+  if (!isScalar(node) || typeof node.value !== "string") {
+    throw new ConfigError("proxy", "Expected a non-empty proxy URI.");
+  }
+
+  const proxy = node.value.trim();
+
+  if (proxy === "") {
+    throw new ConfigError("proxy", "Expected a non-empty proxy URI.");
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(proxy);
+  } catch {
+    throw new ConfigError("proxy", "Expected a valid proxy URI with scheme http, https, or socks5.");
+  }
+
+  if (!SUPPORTED_PROXY_PROTOCOLS.has(url.protocol)) {
+    throw new ConfigError("proxy", "Expected a valid proxy URI with scheme http, https, or socks5.");
+  }
+
+  return proxy;
+}
+
 function readProviderSections(document: Document.Parsed): Record<string, unknown> {
   const rawConfig = document.toJS() as Record<string, unknown>;
   const providerSections: Record<string, unknown> = {};
@@ -220,11 +252,14 @@ function readProviderSections(document: Document.Parsed): Record<string, unknown
 const CORE_TOP_LEVEL_KEYS = new Set([
   "server",
   "logging",
+  "proxy",
   "tracking",
   "workspace",
   "executors",
   "workflow"
 ]);
+
+const SUPPORTED_PROXY_PROTOCOLS = new Set(["http:", "https:", "socks5:"]);
 
 function readOptionalExecutorWorkspace(
   node: unknown,
