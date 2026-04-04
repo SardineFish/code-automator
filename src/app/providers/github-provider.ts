@@ -38,10 +38,12 @@ import { resolveGitHubProviderConfig } from "./github-config.js";
  *   mention; setting gh.requireMention to false allows any issue comment.
  * - pr:at
  *   Emitted for GitHub PR comment events whenever the comment mentions the bot
- *   handle anywhere in the body.
+ *   handle anywhere in the body. Inline review comments attached to a
+ *   submitted review are ignored instead of emitting pr:at.
  * - pr:comment
  *   Emitted for GitHub "issue_comment" events on pull requests and for
- *   GitHub "pull_request_review_comment" events.
+ *   standalone GitHub "pull_request_review_comment" events. Inline review
+ *   comments attached to a submitted review are ignored instead.
  * - pr:review
  *   Emitted for GitHub "pull_request_review" events, except approved reviews
  *   when gh.ignoreApprovalReview is enabled.

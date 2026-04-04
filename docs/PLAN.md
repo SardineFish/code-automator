@@ -173,6 +173,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Keep reusable-session helper scripts unchanged while documenting config-relative helper-script invocation.
 - Update the reusable-session docs and regression coverage so helper-script resolution no longer depends on the executor process `cwd`.
 
+### Plan 27: Ignore PR review comments attached to a submitted review [done]
+
+- Keep the duplication fix provider-owned by ignoring `pull_request_review_comment` deliveries that include `comment.pull_request_review_id`.
+- Extend provider and redelivery regression coverage so standalone review comments still route while attached inline review comments no longer trigger separate workflows or mention handling.
+- Update operator docs to clarify that inline review comments bundled into a submitted review are handled only through the submitted `pull_request_review` event.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.
