@@ -1,10 +1,10 @@
 import type { LogSink } from "../../types/logging.js";
-import type { AppContextTerminalListeners, AppContextTerminalEventMap } from "../../types/runtime.js";
+import type { WorkflowContextTerminalListeners, WorkflowContextTerminalEventMap } from "../../types/runtime.js";
 import type { CompletedWorkflowRunRecord } from "../../types/tracking.js";
 
 export type WorkflowTerminalEvent =
-  | { name: "completed"; payload: AppContextTerminalEventMap["completed"] }
-  | { name: "error"; payload: AppContextTerminalEventMap["error"] };
+  | { name: "completed"; payload: WorkflowContextTerminalEventMap["completed"] }
+  | { name: "error"; payload: WorkflowContextTerminalEventMap["error"] };
 
 export function buildWorkflowTerminalEvent(
   record: CompletedWorkflowRunRecord
@@ -44,7 +44,7 @@ export function buildWorkflowTerminalEvent(
 export function emitWorkflowTerminalEvent(
   logSink: LogSink,
   runId: string,
-  listeners: AppContextTerminalListeners,
+  listeners: WorkflowContextTerminalListeners,
   event: WorkflowTerminalEvent
 ): void {
   if (event.name === "completed") {
@@ -62,8 +62,8 @@ export function emitWorkflowTerminalEvent(
 function invokeCompletedListener(
   logSink: LogSink,
   runId: string,
-  listener: AppContextTerminalListeners["completed"][number],
-  payload: AppContextTerminalEventMap["completed"]
+  listener: WorkflowContextTerminalListeners["completed"][number],
+  payload: WorkflowContextTerminalEventMap["completed"]
 ): void {
   void Promise.resolve()
     .then(() => listener(payload))
@@ -79,8 +79,8 @@ function invokeCompletedListener(
 function invokeErrorListener(
   logSink: LogSink,
   runId: string,
-  listener: AppContextTerminalListeners["error"][number],
-  payload: AppContextTerminalEventMap["error"]
+  listener: WorkflowContextTerminalListeners["error"][number],
+  payload: WorkflowContextTerminalEventMap["error"]
 ): void {
   void Promise.resolve()
     .then(() => listener(payload))

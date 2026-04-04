@@ -2,9 +2,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { initFetchHelper } from "../providers/http/fetch-helper.js";
 import type { ServiceConfig } from "../types/config.js";
 import type { LogSink } from "../types/logging.js";
-import type { AppContext } from "../types/runtime.js";
+import type { WorkflowContext } from "../types/runtime.js";
 import { createAppRuntimeOptions, type AppRuntimeOptions, type AppRuntimeOverrides, initializeWorkflowTracking } from "./default-app-runtime.js";
-import { createAppContext } from "./create-app-context.js";
+import { createWorkflowContext } from "./create-workflow-context.js";
 import { createRequestDrainController } from "./request-drain.js";
 export type AppOptions = AppRuntimeOverrides;
 export interface AppLifecycle {
@@ -15,7 +15,7 @@ export interface AppLifecycle {
 export type ProviderHandler = (
   req: IncomingMessage,
   res: ServerResponse,
-  context: AppContext
+  context: WorkflowContext
 ) => Promise<void> | void;
 export function App(config: ServiceConfig, options: AppOptions = {}): AppBuilder {
   initFetchHelper(config.proxy);
@@ -108,7 +108,7 @@ class AppBuilder {
       return;
     }
 
-    const context = createAppContext(routePath, this.config, this.runtime);
+    const context = createWorkflowContext(routePath, this.config, this.runtime);
     await handler(request, response, context);
 
     if (!response.headersSent) {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { TrackingConfig } from "../../types/config.js";
 import type { LogSink } from "../../types/logging.js";
-import type { AppContextTerminalListeners } from "../../types/runtime.js";
+import type { WorkflowContextTerminalListeners } from "../../types/runtime.js";
 import type {
   ActiveWorkflowRunRecord,
   CompletedWorkflowRunRecord,
@@ -23,7 +23,7 @@ export function createFileWorkflowTracker(
   logSink: LogSink
 ): WorkflowTracker {
   let state: WorkflowTrackerState = { version: 2, activeRuns: {}, keyedWorkspaces: {} };
-  const terminalListeners = new Map<string, AppContextTerminalListeners>();
+  const terminalListeners = new Map<string, WorkflowContextTerminalListeners>();
   let queue = Promise.resolve();
 
   return {
@@ -275,11 +275,11 @@ function isQueuedRunExpired(createdAt: string): boolean {
   return Date.now() - Date.parse(createdAt) > QUEUED_LOST_GRACE_MS;
 }
 
-function hasTerminalListeners(listeners: AppContextTerminalListeners): boolean {
+function hasTerminalListeners(listeners: WorkflowContextTerminalListeners): boolean {
   return listeners.completed.length > 0 || listeners.error.length > 0;
 }
 
-function cloneTerminalListeners(listeners: AppContextTerminalListeners): AppContextTerminalListeners {
+function cloneTerminalListeners(listeners: WorkflowContextTerminalListeners): WorkflowContextTerminalListeners {
   return {
     completed: [...listeners.completed],
     error: [...listeners.error]
@@ -287,9 +287,9 @@ function cloneTerminalListeners(listeners: AppContextTerminalListeners): AppCont
 }
 
 function mergeTerminalListeners(
-  current: AppContextTerminalListeners,
-  next: AppContextTerminalListeners
-): AppContextTerminalListeners {
+  current: WorkflowContextTerminalListeners,
+  next: WorkflowContextTerminalListeners
+): WorkflowContextTerminalListeners {
   return {
     completed: [...current.completed, ...next.completed],
     error: [...current.error, ...next.error]
@@ -297,9 +297,9 @@ function mergeTerminalListeners(
 }
 
 function removeTerminalListeners(
-  current: AppContextTerminalListeners,
-  listenersToRemove: AppContextTerminalListeners
-): AppContextTerminalListeners {
+  current: WorkflowContextTerminalListeners,
+  listenersToRemove: WorkflowContextTerminalListeners
+): WorkflowContextTerminalListeners {
   return {
     completed: removeListenerEntries(current.completed, listenersToRemove.completed),
     error: removeListenerEntries(current.error, listenersToRemove.error)

@@ -185,6 +185,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Extend provider and redelivery regression coverage so standalone review comments still route while attached inline review comments no longer trigger separate workflows or mention handling.
 - Update operator docs to clarify that inline review comments bundled into a submitted review are handled only through the submitted `pull_request_review` event.
 
+### Plan 29: Rename request-scoped app context to workflow context [done]
+
+- Rename the current request-scoped runtime contract from `AppContext` to `WorkflowContext` without changing submission behavior.
+- Rename the request-scoped context factory from `createAppContext` to `createWorkflowContext` and keep call sites behaviorally identical.
+- Update runtime, tracking, and provider listener type names from `AppContext*` to `WorkflowContext*` so request-scoped semantics stay explicit.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

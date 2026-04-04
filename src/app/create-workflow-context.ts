@@ -1,22 +1,22 @@
 import type { ServiceConfig } from "../types/config.js";
 import type {
-  AppContext,
-  AppContextTerminalEventName,
-  AppContextTerminalListener,
-  AppContextTerminalListeners,
+  WorkflowContext,
+  WorkflowContextTerminalEventName,
+  WorkflowContextTerminalListener,
+  WorkflowContextTerminalListeners,
   TriggerSubmissionInput
 } from "../types/runtime.js";
 import { processTriggerSubmission } from "../service/orchestration/process-trigger-submission.js";
 import type { AppRuntimeOptions } from "./default-app-runtime.js";
 
-export function createAppContext(
+export function createWorkflowContext(
   routePath: string,
   config: ServiceConfig,
   runtime: AppRuntimeOptions
-): AppContext {
+): WorkflowContext {
   let submitted = false;
   const triggers = new Map<string, { input: Record<string, unknown>; env: Record<string, string> }>();
-  const terminalListeners: AppContextTerminalListeners = {
+  const terminalListeners: WorkflowContextTerminalListeners = {
     completed: [],
     error: []
   };
@@ -47,7 +47,7 @@ export function createAppContext(
         throw new Error("Cannot register terminal listeners after submit().");
       }
 
-      const eventListeners = terminalListeners[eventName] as AppContextTerminalListener<
+      const eventListeners = terminalListeners[eventName] as WorkflowContextTerminalListener<
         typeof eventName
       >[];
       eventListeners.push(listener);
@@ -107,13 +107,13 @@ function isStringMap(value: unknown): value is Record<string, string> {
   return isPlainObject(value) && Object.values(value).every((entry) => typeof entry === "string");
 }
 
-function assertTerminalEventName(value: string): asserts value is AppContextTerminalEventName {
+function assertTerminalEventName(value: string): asserts value is WorkflowContextTerminalEventName {
   if (value !== "completed" && value !== "error") {
     throw new Error(`Unsupported terminal event '${value}'.`);
   }
 }
 
-function cloneTerminalListeners(listeners: AppContextTerminalListeners): AppContextTerminalListeners {
+function cloneTerminalListeners(listeners: WorkflowContextTerminalListeners): WorkflowContextTerminalListeners {
   return {
     completed: [...listeners.completed],
     error: [...listeners.error]

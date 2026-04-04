@@ -36,19 +36,19 @@ export interface WorkflowErrorEventPayload {
   error: Error;
 }
 
-export interface AppContextTerminalEventMap {
+export interface WorkflowContextTerminalEventMap {
   completed: WorkflowCompletedEventPayload;
   error: WorkflowErrorEventPayload;
 }
 
-export type AppContextTerminalEventName = keyof AppContextTerminalEventMap;
-export type AppContextTerminalListener<T extends AppContextTerminalEventName> = (
-  event: AppContextTerminalEventMap[T]
+export type WorkflowContextTerminalEventName = keyof WorkflowContextTerminalEventMap;
+export type WorkflowContextTerminalListener<T extends WorkflowContextTerminalEventName> = (
+  event: WorkflowContextTerminalEventMap[T]
 ) => void | Promise<void>;
 
-export interface AppContextTerminalListeners {
-  completed: AppContextTerminalListener<"completed">[];
-  error: AppContextTerminalListener<"error">[];
+export interface WorkflowContextTerminalListeners {
+  completed: WorkflowContextTerminalListener<"completed">[];
+  error: WorkflowContextTerminalListener<"error">[];
 }
 
 export interface OrchestrationResult {
@@ -75,14 +75,14 @@ export interface SubmittedTrigger {
   env: Record<string, string>;
 }
 
-export interface AppContext {
+export interface WorkflowContext {
   config: ServiceConfig;
   env: NodeJS.ProcessEnv;
   log: LogSink;
   trigger(name: TriggerKey, payload: TriggerSubmissionInput): void;
-  on<T extends AppContextTerminalEventName>(
+  on<T extends WorkflowContextTerminalEventName>(
     eventName: T,
-    listener: AppContextTerminalListener<T>
+    listener: WorkflowContextTerminalListener<T>
   ): () => void;
   submit(): Promise<OrchestrationResult>;
 }
