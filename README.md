@@ -100,7 +100,7 @@ workflow:
       - issue:open
       - issue:command:plan
     use: codex
-    prompt: Check issue ${in.issueId} in ${in.repo}. Write an implementation plan and post it as an issue comment. Do not write code.
+    prompt: ${file:prompt/issue-plan.txt}
   issue-implement:
     on:
       - issue:command:approve
@@ -113,6 +113,14 @@ workflow:
     use: codex
     prompt: Check PR ${in.prId} in ${in.repo}. You received actionable PR feedback: ${in.content}. Review the feedback and update the pull request if needed.
 ```
+
+`prompt/issue-plan.txt`
+
+```text
+Check issue ${in.issueId} in ${in.repo}. Write an implementation plan and post it as an issue comment. Do not write code.
+```
+
+Workflow prompt include paths resolve relative to `service.yml`. Nested `${file:...}` markers inside prompt files resolve relative to the including file, and the expanded prompt still renders with the normal `${in.*}` variables at runtime.
 
 After this is configured, a typical GitHub flow looks like this:
 
@@ -263,6 +271,9 @@ The redelivery worker stores its checkpoint next to the tracked run artifacts un
 ## Configuration Notes
 
 - Workflow prompts may use `${in.*}` variables.
+- `workflow.<name>.prompt` may also use `${file:path}` to inline prompt text from another file.
+- Top-level prompt include paths resolve relative to the YAML config file, and nested prompt includes resolve relative to the including file.
+- Prompt files are expanded at config load, then the resulting prompt renders `${in.*}` variables when a workflow runs.
 - Executor commands may use `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.<NAME>}`.
 - `executors.<name>.workspace` is optional:
   - omit it to inherit `workspace.enabled` and `workspace.baseDir`

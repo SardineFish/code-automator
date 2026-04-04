@@ -14,6 +14,7 @@ import type {
 import { runtimeLogLevels } from "../types/logging.js";
 import { isTriggerKey } from "../types/triggers.js";
 import { ConfigError } from "./config-error.js";
+import { expandWorkflowPromptFileIncludes } from "./expand-workflow-prompt-file-includes.js";
 import {
   expectMap,
   readBoolean,
@@ -36,7 +37,7 @@ export function validateServiceConfigDocument(
   const workspace = readWorkspaceConfig(root, baseDir);
   const tracking = readTrackingConfig(root, baseDir);
   const executors = readExecutors(root, baseDir);
-  const workflow = readWorkflow(root, new Set(Object.keys(executors)));
+  const workflow = readWorkflow(root, new Set(Object.keys(executors)), baseDir);
   const providerSections = readProviderSections(document);
 
   return {
@@ -154,7 +155,8 @@ function readExecutors(root: ReturnType<typeof expectMap>, baseDir: string): Rec
 
 function readWorkflow(
   root: ReturnType<typeof expectMap>,
-  executorNames: Set<string>
+  executorNames: Set<string>,
+  baseDir: string
 ): WorkflowDefinition[] {
   const workflowMap = readRequiredNode(root, "workflow", "workflow");
 
@@ -170,7 +172,11 @@ function readWorkflow(
     const entry = expectMap(item.value, path);
     const onValues = readStringSequence(readRequiredNode(entry, "on", `${path}.on`), `${path}.on`);
     const use = readString(readRequiredNode(entry, "use", `${path}.use`), `${path}.use`);
-    const prompt = readString(readRequiredNode(entry, "prompt", `${path}.prompt`), `${path}.prompt`);
+    const prompt = expandWorkflowPromptFileIncludes(
+      readString(readRequiredNode(entry, "prompt", `${path}.prompt`), `${path}.prompt`),
+      `${path}.prompt`,
+      baseDir
+    );
 
     if (onValues.length === 0) {
       throw new ConfigError(`${path}.on`, "Expected at least one trigger.");

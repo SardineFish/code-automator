@@ -167,6 +167,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Require Node.js 22 or newer in the package metadata so local installs and operators see the supported runtime clearly.
 - Update CI to run the check workflow on Node.js 22 so the documented support floor and automation stay aligned.
 
+### Plan 26: Workflow prompt file includes [done]
+
+- Add `${file:path}` support for `workflow.<name>.prompt` so operators can move large prompt bodies into text files.
+- Resolve top-level include paths from the YAML config file and nested include paths from the including prompt file while preserving later `${in.*}` rendering.
+- Add focused config-loader coverage plus operator docs for nested includes, missing files, and include cycles.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.
