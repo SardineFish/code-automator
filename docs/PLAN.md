@@ -162,6 +162,11 @@ This file defines the implementation order for the whole Coding Automator projec
 - Add a clearer expanded workflow walkthrough that explains how GitHub issue and PR comments trigger the documented plan, approve, and review flows.
 - Document keyed workspace setup, host-security risks, and a minimal Docker executor example for operators who want stronger isolation.
 
+### Plan 25: Raise the Node.js runtime floor [done]
+
+- Require Node.js 22 or newer in the package metadata so local installs and operators see the supported runtime clearly.
+- Update CI to run the check workflow on Node.js 22 so the documented support floor and automation stay aligned.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.
