@@ -167,6 +167,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Require Node.js 22 or newer in the package metadata so local installs and operators see the supported runtime clearly.
 - Update CI to run the check workflow on Node.js 22 so the documented support floor and automation stay aligned.
 
+### Plan 26: Config-relative helper scripts and split reusable-session state [done]
+
+- Add `${configDir}` as an executor command template variable that resolves to the loaded YAML config directory.
+- Let reusable-session helper scripts accept explicit workspace and state paths so repo checkouts and wrapper metadata can live in separate locations.
+- Update the reusable-session docs and regression coverage so helper-script resolution no longer depends on the executor process `cwd`.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

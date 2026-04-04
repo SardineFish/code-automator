@@ -11,6 +11,7 @@ export interface WorkflowPromptTemplateVariables {
 }
 
 export interface ExecutorTemplateVariables {
+  configDir: string;
   prompt: string;
   workspace: string;
   workspaceKey: string;

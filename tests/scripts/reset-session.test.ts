@@ -53,3 +53,20 @@ test("reset-session logs the cleanup steps", async () => {
   assert.match(output, /reset-session: removing workspace /);
   assert.match(output, /reset-session: removed workspace /);
 });
+
+test("reset-session removes an explicit state file outside the workspace", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "gao-reset-session-state-"));
+  const workspacePath = path.join(root, "workspace", "code");
+  const stateFilePath = path.join(root, ".codex-reuse.json");
+  await mkdir(workspacePath, { recursive: true });
+  await writeFile(stateFilePath, JSON.stringify({ threadId: "thread-456" }));
+
+  await resetSession(workspacePath, {
+    cwd: path.join(root, "outside"),
+    stderr: new PassThrough(),
+    stateFilePath
+  });
+
+  await assert.rejects(() => access(workspacePath));
+  await assert.rejects(() => access(stateFilePath));
+});

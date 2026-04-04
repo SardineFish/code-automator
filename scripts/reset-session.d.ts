@@ -6,5 +6,6 @@ export function resetSession(
     chdir?: (nextPath: string) => void;
     cwd?: string;
     stderr?: NodeJS.WritableStream;
+    stateFilePath?: string;
   }
 ): Promise<void>;

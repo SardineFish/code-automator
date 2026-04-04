@@ -38,7 +38,7 @@ chat-bot:
   url: /chat
 executors:
   codex:
-    run: ${env.NODE_BIN} /absolute/path/to/scripts/codex-reuse.js /absolute/path/to/codex ${prompt}
+    run: ${env.NODE_BIN} ${configDir}/scripts/codex-reuse.js --workspace ${workspace}/code --state ${workspace}/.codex-reuse.json /absolute/path/to/codex ${prompt}
     workspace:
       baseDir: /var/lib/coding-automator/issues
       key: ${in.repo}#${in.issueId}
@@ -46,7 +46,7 @@ executors:
     env:
       FOO: BAR
   codex-reset:
-    run: ${env.NODE_BIN} /absolute/path/to/scripts/reset-session.js ${workspace}
+    run: ${env.NODE_BIN} ${configDir}/scripts/reset-session.js --workspace ${workspace}/code --state ${workspace}/.codex-reuse.json
     workspace:
       baseDir: /var/lib/coding-automator/issues
       key: ${in.repo}#${in.issueId}
@@ -122,7 +122,8 @@ workflow:
 ## Interpolation Rules
 
 - Workflow prompts may use `${in.*}` variables.
-- Executor commands may use `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.<NAME>}`.
+- Executor commands may use `${configDir}`, `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.<NAME>}`.
+- `${configDir}` resolves to the directory containing the loaded service YAML config.
 - `${prompt}` is the rendered workflow prompt.
 - `${workspace}` is the per-run workspace path when the selected executor resolves to workspace allocation, otherwise an empty string.
 - `${workspaceKey}` is the rendered `executors.<name>.workspace.key` value when configured, otherwise an empty string.
@@ -131,7 +132,7 @@ workflow:
 - Executor `env` entries are added to the child process environment for that run.
 - Provider-supplied `trigger(..., { env })` values are added to the child process environment for the matched run.
 - Environment merge order is `base process env -> executor env -> trigger env`.
-- Executor `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.*}` values are shell-escaped before the command runs through `/bin/sh -lc`.
+- Executor `${configDir}`, `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.*}` values are shell-escaped before the command runs through `/bin/sh -lc`.
 - Reusable-session helper scripts such as `codex-reuse.js` may accept additional positional arguments before `${prompt}`, for example a Codex wrapper path.
 - Missing or unsupported template variables throw an error.
 - `null` template values render as an empty string.

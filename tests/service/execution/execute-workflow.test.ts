@@ -15,9 +15,10 @@ const artifacts = {
 
 test("executeWorkflow shell-escapes prompt and injects the installation token", async () => {
   const config = createServiceConfig();
+  config.configDir = "/tmp/service-config";
   config.workspace.enabled = false;
   config.executors.codex.run =
-    "${env.NODE_BIN} codex -w ${workspace} --base ${env.BASE} --executor ${env.EXECUTOR} --shared ${env.SHARED} --trigger ${env.TRIGGER_ONLY} --token ${env.GH_TOKEN} exec ${prompt}";
+    "${env.NODE_BIN} ${configDir}/codex-wrapper.js -w ${workspace} --base ${env.BASE} --executor ${env.EXECUTOR} --shared ${env.SHARED} --trigger ${env.TRIGGER_ONLY} --token ${env.GH_TOKEN} exec ${prompt}";
   config.executors.codex.env.SHARED = "executor";
   config.executors.codex.workspace = "/tmp/custom-parent";
 
@@ -75,7 +76,7 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
   assert.equal(result.pid, 4242);
   assert.equal(
     result.command,
-    `'${process.execPath}' codex -w '/tmp/workspace-1' --base '1' --executor 'codex' --shared 'trigger' --trigger '1' --token 'installation-token' exec 'O'"'"'Hara'`
+    `'${process.execPath}' '/tmp/service-config'/codex-wrapper.js -w '/tmp/workspace-1' --base '1' --executor 'codex' --shared 'trigger' --trigger '1' --token 'installation-token' exec 'O'"'"'Hara'`
   );
   assert.equal(calls.workspaceBaseDir, "/tmp/custom-parent");
   assert.equal(calls.cwd, "/tmp/workspace-1");
@@ -91,7 +92,7 @@ test("executeWorkflow shell-escapes prompt and injects the installation token", 
 test("executeWorkflow reuses a keyed workspace and renders ${workspaceKey}", async () => {
   const config = createServiceConfig();
   config.workspace.enabled = false;
-  config.executors.codex.run = "codex -w ${workspace} --key ${workspaceKey} exec ${prompt}";
+  config.executors.codex.run = "${configDir}/codex -w ${workspace} --key ${workspaceKey} exec ${prompt}";
   config.executors.codex.workspace = {
     baseDir: "/tmp/reusable-workspaces",
     key: "${in.repo}#${in.issueId}"
@@ -145,7 +146,7 @@ test("executeWorkflow reuses a keyed workspace and renders ${workspaceKey}", asy
   assert.equal(calls.cwd, "/tmp/reusable-workspaces/acme_demo#7");
   assert.equal(
     calls.command,
-    "codex -w '/tmp/reusable-workspaces/acme_demo#7' --key 'acme/demo#7' exec 'Continue work'"
+    "'/tmp/github-agent-orchestrator/config'/codex -w '/tmp/reusable-workspaces/acme_demo#7' --key 'acme/demo#7' exec 'Continue work'"
   );
   assert.equal(calls.removedWorkspace, undefined);
 });

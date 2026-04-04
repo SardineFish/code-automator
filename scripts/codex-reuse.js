@@ -22,13 +22,16 @@ export async function runCodexReuse(
 ) {
   const spawn = dependencies.spawn ?? spawnChildProcess;
   const env = dependencies.env ?? process.env;
-  const workspacePath = dependencies.cwd ?? process.cwd();
+  const defaultCwd = dependencies.cwd ?? process.cwd();
   const stdout = dependencies.stdout ?? process.stdout;
   const stderr = dependencies.stderr ?? process.stderr;
-  const [codexPath, ...promptArgv] = argv;
-  const codexCommand = readCodexPath(codexPath);
+  const { codexCommand, promptArgv, stateFilePath, workspacePath } = parseCodexReuseArgs(
+    argv,
+    defaultCwd
+  );
   const prompt = await readPrompt(promptArgv, dependencies.stdin ?? process.stdin);
-  const state = await readState(workspacePath, dependencies);
+  await (dependencies.mkdir ?? mkdir)(workspacePath, { recursive: true });
+  const state = await readStateFile(stateFilePath, dependencies);
 
   let lineBuffer = "";
   let capturedThreadId = state?.threadId;
@@ -62,7 +65,7 @@ export async function runCodexReuse(
           capturedThreadId = trailingThreadId;
         }
         if (capturedThreadId) {
-          await writeState(workspacePath, capturedThreadId, dependencies);
+          await writeStateFile(stateFilePath, capturedThreadId, dependencies);
         }
         resolve(code ?? 1);
       } catch (error) {
@@ -75,10 +78,14 @@ export async function runCodexReuse(
 }
 
 export async function readState(workspacePath, dependencies = {}) {
-  const stateFilePath = getCodexReuseStatePath(workspacePath);
+  return readStateFile(getCodexReuseStatePath(workspacePath), dependencies);
+}
+
+async function readStateFile(stateFilePath, dependencies = {}) {
+  const resolvedStateFilePath = path.resolve(stateFilePath);
 
   try {
-    const contents = await (dependencies.readFile ?? readFile)(stateFilePath, "utf8");
+    const contents = await (dependencies.readFile ?? readFile)(resolvedStateFilePath, "utf8");
     const parsed = JSON.parse(contents);
     return typeof parsed.threadId === "string" && parsed.threadId.trim() !== ""
       ? { threadId: parsed.threadId }
@@ -89,15 +96,84 @@ export async function readState(workspacePath, dependencies = {}) {
 }
 
 export async function writeState(workspacePath, threadId, dependencies = {}) {
-  await (dependencies.mkdir ?? mkdir)(workspacePath, { recursive: true });
-  await (dependencies.writeFile ?? writeFile)(
-    getCodexReuseStatePath(workspacePath),
-    JSON.stringify({ threadId }, null, 2)
-  );
+  return writeStateFile(getCodexReuseStatePath(workspacePath), threadId, dependencies);
+}
+
+async function writeStateFile(stateFilePath, threadId, dependencies = {}) {
+  const resolvedStateFilePath = path.resolve(stateFilePath);
+  await (dependencies.mkdir ?? mkdir)(path.dirname(resolvedStateFilePath), { recursive: true });
+  await (dependencies.writeFile ?? writeFile)(resolvedStateFilePath, JSON.stringify({ threadId }, null, 2));
 }
 
 export function getCodexReuseStatePath(workspacePath) {
   return path.join(workspacePath, CODEX_REUSE_STATE_FILE);
+}
+
+function parseCodexReuseArgs(argv, cwd) {
+  const positional = [];
+  let workspacePath = path.resolve(cwd);
+  let stateFilePath;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+
+    if (argument === "--") {
+      positional.push(...argv.slice(index + 1));
+      break;
+    }
+
+    const workspaceOption = readOption(argument, "--workspace");
+    if (workspaceOption.matched) {
+      workspacePath = resolveCliPath(workspaceOption.value ?? argv[index + 1], cwd, "--workspace");
+      if (workspaceOption.consumedNextValue) {
+        index += 1;
+      }
+      continue;
+    }
+
+    const stateOption = readOption(argument, "--state");
+    if (stateOption.matched) {
+      stateFilePath = resolveCliPath(stateOption.value ?? argv[index + 1], cwd, "--state");
+      if (stateOption.consumedNextValue) {
+        index += 1;
+      }
+      continue;
+    }
+
+    positional.push(argument);
+  }
+
+  const [codexPath, ...promptArgv] = positional;
+  return {
+    codexCommand: readCodexPath(codexPath),
+    promptArgv,
+    stateFilePath: stateFilePath ?? getCodexReuseStatePath(workspacePath),
+    workspacePath
+  };
+}
+
+function readOption(argument, flagName) {
+  if (argument === flagName) {
+    return { matched: true, consumedNextValue: true, value: undefined };
+  }
+
+  if (argument.startsWith(`${flagName}=`)) {
+    return {
+      matched: true,
+      consumedNextValue: false,
+      value: argument.slice(flagName.length + 1)
+    };
+  }
+
+  return { matched: false, consumedNextValue: false, value: undefined };
+}
+
+function resolveCliPath(value, cwd, flagName) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${flagName} requires a non-empty path.`);
+  }
+
+  return path.resolve(cwd, value);
 }
 
 function extractThreadIdFromBuffer(buffer, currentThreadId) {

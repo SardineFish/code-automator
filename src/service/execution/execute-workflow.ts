@@ -34,6 +34,7 @@ export async function executeWorkflow(options: ExecuteWorkflowOptions): Promise<
 
   try {
     const command = renderExecutorCommand(executor.run, {
+      configDir: toShellLiteral(options.config.configDir),
       prompt: toShellLiteral(options.prompt),
       workspace: toShellLiteral(workspacePath, { allowEmpty: true }),
       workspaceKey: toShellLiteral(options.workspaceKey ?? "", { allowEmpty: true }),

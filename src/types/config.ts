@@ -78,4 +78,6 @@ export interface AppConfig {
 }
 
 export type RawServiceConfig = AppConfig;
-export type ServiceConfig = AppConfig;
+export interface ServiceConfig extends AppConfig {
+  configDir: string;
+}
