@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test, { type TestContext } from "node:test";
 
 import { ConfigError } from "../../src/config/config-error.js";
 import { parseServiceConfig } from "../../src/config/load-service-config.js";
+import { renderWorkflowPrompt } from "../../src/service/template/render-workflow-template.js";
 
 const validConfig = `
 server:
@@ -130,6 +134,69 @@ test("parseServiceConfig accepts executor workspace key mappings", () => {
   });
 });
 
+test("parseServiceConfig expands workflow prompt file includes and keeps nested runtime variables", (t) => {
+  const dir = createPromptFixture(t, {
+    "prompts/issue-plan.txt": "Plan issue ${in.issueId}\n${file:partials/repo.txt}",
+    "prompts/partials/repo.txt": "Repo ${in.repo}"
+  });
+  const parsed = parseServiceConfig(
+    validConfig.replace("prompt: Plan issue ${in.issueId}", 'prompt: "${file: prompts/issue-plan.txt}"'),
+    path.join(dir, "service.yml")
+  );
+
+  assert.equal(parsed.workflow[0].prompt, "Plan issue ${in.issueId}\nRepo ${in.repo}");
+  assert.equal(
+    renderWorkflowPrompt(parsed.workflow[0].prompt, {
+      in: {
+        issueId: "7",
+        repo: "acme/demo"
+      }
+    }),
+    "Plan issue 7\nRepo acme/demo"
+  );
+});
+
+test("parseServiceConfig accepts absolute workflow prompt include paths", (t) => {
+  const dir = createPromptFixture(t, {
+    "prompts/issue-plan.txt": "Plan issue ${in.issueId}"
+  });
+  const absolutePromptPath = path.join(dir, "prompts/issue-plan.txt");
+  const parsed = parseServiceConfig(
+    validConfig.replace("prompt: Plan issue ${in.issueId}", `prompt: "\${file:${absolutePromptPath}}"`),
+    path.join(dir, "service.yml")
+  );
+
+  assert.equal(parsed.workflow[0].prompt, "Plan issue ${in.issueId}");
+});
+
+test("parseServiceConfig rejects missing workflow prompt include files", (t) => {
+  const dir = createPromptFixture(t, {});
+  const invalid = validConfig.replace("prompt: Plan issue ${in.issueId}", 'prompt: "${file: prompts/missing.txt}"');
+
+  assert.throws(() => parseServiceConfig(invalid, path.join(dir, "service.yml")), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /workflow\.issue-plan\.prompt: Included prompt file not found:/);
+    assert.match(error.message, /prompts\/missing\.txt/);
+    return true;
+  });
+});
+
+test("parseServiceConfig rejects circular workflow prompt includes", (t) => {
+  const dir = createPromptFixture(t, {
+    "prompts/issue-plan.txt": "${file:partials/a.txt}",
+    "prompts/partials/a.txt": "${file:b.txt}",
+    "prompts/partials/b.txt": "${file:a.txt}"
+  });
+  const invalid = validConfig.replace("prompt: Plan issue ${in.issueId}", 'prompt: "${file: prompts/issue-plan.txt}"');
+
+  assert.throws(() => parseServiceConfig(invalid, path.join(dir, "service.yml")), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /workflow\.issue-plan\.prompt: Prompt file include cycle detected:/);
+    assert.match(error.message, /prompts\/partials\/a\.txt -> .*prompts\/partials\/b\.txt -> .*prompts\/partials\/a\.txt/);
+    return true;
+  });
+});
+
 test("parseServiceConfig rejects unknown workflow executor", () => {
   const invalid = validConfig.replace("use: claude", "use: unknown");
   assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), {
@@ -232,3 +299,16 @@ test("parseServiceConfig rejects unsupported logging levels", () => {
     return true;
   });
 });
+
+function createPromptFixture(t: TestContext, files: Record<string, string>): string {
+  const dir = mkdtempSync(path.join(tmpdir(), "gao-config-prompts-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  for (const [relativePath, contents] of Object.entries(files)) {
+    const absolutePath = path.join(dir, relativePath);
+    mkdirSync(path.dirname(absolutePath), { recursive: true });
+    writeFileSync(absolutePath, contents);
+  }
+
+  return dir;
+}
