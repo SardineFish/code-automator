@@ -38,7 +38,7 @@ chat-bot:
   url: /chat
 executors:
   codex:
-    run: mkdir -p ${workspace}/code && ln -sfn ${workspace}/.codex-reuse.json ${workspace}/code/.codex-reuse.json && cd ${workspace}/code && ${env.NODE_BIN} ${configDir}/scripts/codex-reuse.js /absolute/path/to/codex ${prompt}
+    run: ${env.NODE_BIN} ${configDir}/scripts/codex-reuse.js /absolute/path/to/codex ${prompt}
     workspace:
       baseDir: /var/lib/coding-automator/issues
       key: ${in.repo}#${in.issueId}
@@ -134,7 +134,6 @@ workflow:
 - Environment merge order is `base process env -> executor env -> trigger env`.
 - Executor `${configDir}`, `${prompt}`, `${workspace}`, `${workspaceKey}`, and `${env.*}` values are shell-escaped before the command runs through `/bin/sh -lc`.
 - Reusable-session helper scripts such as `codex-reuse.js` may accept additional positional arguments before `${prompt}`, for example a Codex wrapper path.
-- Operators can keep the reusable-session scripts unchanged and still split the checkout from wrapper-owned state by creating a checkout subdirectory, symlinking `.codex-reuse.json` to the workspace root, and then `cd`-ing into the checkout inside the command template.
 - Missing or unsupported template variables throw an error.
 - `null` template values render as an empty string.
 - Objects and arrays render as compact JSON.
