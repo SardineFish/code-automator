@@ -116,9 +116,13 @@ workflow:
 
 ## Provider Runtime Model
 
-- `src/app/` registers provider handlers against provider-owned route paths such as `gh.url`.
+- `src/app/` keeps one unified provider registry for both HTTP route handlers and non-HTTP app providers.
+- Slash-prefixed provider keys are reserved for built-in HTTP route handlers.
+- The built-in HTTP service uses the exact request pathname as the provider lookup key.
+- `src/app/` registers HTTP provider handlers against provider-owned route paths such as `gh.url`.
+- Non-HTTP custom providers should prefer namespaced keys such as `github:redelivery` or `foo:bar` when practical.
 - `src/app/` initializes the shared outbound `fetchHelper()` once from top-level `fetch`, and provider-owned outbound API calls use that helper instead of raw `fetch`.
-- A provider handler accepts `(req, res, context)` and owns request parsing, request validation, provider-specific auth, and the HTTP response.
+- A provider handler accepts `(context, req, res)` and owns request parsing, request validation, provider-specific auth, and the HTTP response.
 - The shared `context` exposes:
   - `config`: the parsed app config plus provider-owned sections.
   - `trigger(name, { in, env })`: register one candidate trigger with provider-defined template input and optional per-run environment variables.

@@ -233,7 +233,13 @@ This file defines the implementation order for the whole Coding Automator projec
 - Change app shutdown to cancel pending scheduler waits, log tracked jobs that are still being awaited, log a settle marker as each tracked job finishes during shutdown, and then wait for tracked jobs before the outer HTTP idle wait.
 - Refactor GitHub redelivery to use the built-in app scheduler, keep detached workflow draining on the existing CLI `workflowTracker` path, and update focused coverage and docs for the new lifecycle boundary.
 
-### Plan 36: Config-driven local extensions for providers and app services [done]
+### Plan 36: Slash-prefixed HTTP provider keys [done]
+
+- Add a shared `HttpProviderKey` type plus overloads on `provider()` and `getProvider()` so slash-prefixed literal keys resolve to `HttpRequestProvider` without splitting the unified provider registry.
+- Thread validated HTTP route keys such as `gh.url` and built-in request pathname dispatch through that shared type while keeping runtime dispatch behavior unchanged.
+- Add focused compile-time and runtime coverage plus operator docs for the slash-prefixed HTTP route convention and namespaced non-HTTP provider keys.
+
+### Plan 37: Config-driven local extensions for providers and app services [done]
 
 - Add a top-level ordered `extensions` config mapping that resolves local module paths from the service config directory while preserving arbitrary extension-owned `config` payloads.
 - Load configured extensions after the explicit built-in GitHub registration in `src/app/main.ts`, and let them register providers and app services through the existing builder contract with exact `API_VERSION` checks.

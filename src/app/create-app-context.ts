@@ -1,6 +1,7 @@
 import type { ServiceConfig } from "../types/config.js";
 import type { LogSink } from "../types/logging.js";
-import type { AnyProvider, AppContext } from "../types/runtime.js";
+import type { HttpProviderKey, NonHttpProviderKey } from "../types/provider-keys.js";
+import type { AnyProvider, AppContext, HttpRequestProvider } from "../types/runtime.js";
 import { createAppManagedJobs, type AppManagedJobs } from "./app-managed-jobs.js";
 import type { AppRuntimeOptions } from "./default-app-runtime.js";
 import { createWorkflowContext } from "./create-workflow-context.js";
@@ -28,6 +29,20 @@ export function createAppContext(options: CreateAppContextOptions): ManagedAppCo
   const managedJobs = createAppManagedJobs(appLog);
   let shutdownPromise: Promise<void> | undefined;
 
+  function getProvider(key: HttpProviderKey): HttpRequestProvider;
+  function getProvider<T extends AnyProvider, TKey extends string = string>(
+    key: NonHttpProviderKey<TKey>
+  ): T;
+  function getProvider<T extends AnyProvider>(key: string): T {
+    const provider = options.providers.get(key);
+
+    if (!provider) {
+      throw new UnknownProviderError(key);
+    }
+
+    return provider as T;
+  }
+
   return {
     appContext: {
       config: options.config,
@@ -36,15 +51,7 @@ export function createAppContext(options: CreateAppContextOptions): ManagedAppCo
       createWorkflow(source) {
         return createWorkflowContext(source, options.config, options.runtime);
       },
-      getProvider<T extends AnyProvider>(key: string): T {
-        const provider = options.providers.get(key);
-
-        if (!provider) {
-          throw new UnknownProviderError(key);
-        }
-
-        return provider as T;
-      },
+      getProvider,
       trackJob: managedJobs.trackJob,
       scheduleInterval: managedJobs.scheduleInterval,
       scheduleDelay: managedJobs.scheduleDelay,

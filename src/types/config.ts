@@ -1,6 +1,7 @@
 import type { TriggerKey } from "./triggers.js";
 import type { RuntimeLogLevel } from "./logging.js";
 import type { AppExtensionDefinition } from "./extensions.js";
+import type { HttpProviderKey } from "./provider-keys.js";
 
 export interface ServerConfig {
   host: string;
@@ -40,7 +41,7 @@ export interface WhitelistConfig {
 }
 
 export interface GitHubProviderConfig {
-  url: string;
+  url: HttpProviderKey;
   clientId: string;
   appId: number;
   botHandle: string;

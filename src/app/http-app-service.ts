@@ -1,11 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import type { LogSink } from "../types/logging.js";
-import type { AppContext, ProviderHandler } from "../types/runtime.js";
+import type { HttpProviderKey } from "../types/provider-keys.js";
+import type { AppContext, HttpRequestProvider } from "../types/runtime.js";
 import { createRequestDrainController, type RequestDrainController } from "./request-drain.js";
 import { UnknownProviderError } from "./create-app-context.js";
-
-export type HttpRequestProvider = ProviderHandler<[IncomingMessage, ServerResponse], void>;
 
 export interface HttpAppService {
   server: Server;
@@ -52,7 +51,7 @@ export async function startHttpAppService(
 }
 
 async function handleRequest(
-  path: string,
+  path: HttpProviderKey,
   request: IncomingMessage,
   response: ServerResponse,
   appContext: AppContext
@@ -60,7 +59,7 @@ async function handleRequest(
   let handler: HttpRequestProvider;
 
   try {
-    handler = appContext.getProvider<HttpRequestProvider>(path);
+    handler = appContext.getProvider(path);
   } catch (error) {
     if (error instanceof UnknownProviderError) {
       respond(response, 404, "Not Found");
@@ -78,8 +77,8 @@ async function handleRequest(
   }
 }
 
-function getRequestPath(request: IncomingMessage): string {
-  return new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+function getRequestPath(request: IncomingMessage): HttpProviderKey {
+  return new URL(request.url ?? "/", "http://127.0.0.1").pathname as HttpProviderKey;
 }
 
 function logCompletedRequest(
