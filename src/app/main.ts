@@ -5,7 +5,6 @@ import { createConsoleLogSink } from "../providers/logging/winston-log-sink.js";
 import { App } from "./app.js";
 import { createCliShutdownCoordinator } from "./cli-shutdown.js";
 import { createAppRuntimeOptions, resolveBaseEnv } from "./default-app-runtime.js";
-import { loadConfiguredExtensions } from "./load-configured-extensions.js";
 import { resolveGitHubProviderConfig } from "./providers/github-config.js";
 import { githubRedeliveryService } from "./providers/github-redelivery-service.js";
 import { githubProvider } from "./providers/github-provider.js";
@@ -28,7 +27,9 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
     .provider(github.url, githubProvider)
     .service(githubRedeliveryService);
 
-  await loadConfiguredExtensions(builder, runtimeConfig, baseEnv, runtimeOptions.logSink);
+  for (const extension of runtimeConfig.extensions) {
+    builder.extension(extension.id, extension.use, extension.config);
+  }
 
   const app = await builder.listen();
   const shutdown = createCliShutdownCoordinator({

@@ -1,7 +1,7 @@
 import type { LogSink } from "./logging.js";
 import type { AppServiceHandler, ProviderHandler } from "./runtime.js";
 
-export const APP_EXTENSION_API_VERSION = 1;
+export const APP_EXTENSION_API_VERSION = 1 as const;
 
 export interface AppExtensionDefinition {
   id: string;

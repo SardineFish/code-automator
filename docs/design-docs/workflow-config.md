@@ -130,7 +130,7 @@ workflow:
 - `extensions.<id>.use` accepts only local filesystem paths and resolves relative to the YAML config file directory when it is not already absolute.
 - A `use` target may point to one `.js`, `.mjs`, or `.cjs` file, or to one local package directory that resolves through its package entrypoint.
 - Extension modules load through `module.default ?? module`.
-- Each extension must export one object with exact `API_VERSION: 1` plus `init(builder, context)`.
+- Each extension must export one object with an `API_VERSION` that matches the runtime-supported extension API version, plus `init(builder, context)`.
 - `builder` exposes the same `provider()` and `service()` registration seam used by built-ins.
 - `context` exposes `id`, extension-owned `config`, `configDir`, `env`, and an extension-scoped `log`.
 - Extension startup is local-only and high-trust. The runtime does not sandbox extension code or download remote modules.

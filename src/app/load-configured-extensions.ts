@@ -1,15 +1,15 @@
-import type { ServiceConfig } from "../types/config.js";
+import type { AppExtensionDefinition, AppExtensionBuilder } from "../types/extensions.js";
 import type { LogSink } from "../types/logging.js";
-import type { AppExtensionBuilder } from "../types/extensions.js";
 import { loadAppExtensionModule } from "./load-app-extension-module.js";
 
 export async function loadConfiguredExtensions(
   builder: AppExtensionBuilder,
-  config: ServiceConfig,
+  extensions: AppExtensionDefinition[],
+  configDir: string,
   env: NodeJS.ProcessEnv,
   logSink: LogSink
 ): Promise<void> {
-  for (const extension of config.extensions) {
+  for (const extension of extensions) {
     const extensionLog = logSink.child({ source: "extension", extensionId: extension.id });
     const module = await loadAppExtensionModule(extension);
 
@@ -17,7 +17,7 @@ export async function loadConfiguredExtensions(
       await module.init(builder, {
         id: extension.id,
         config: extension.config,
-        configDir: config.configDir,
+        configDir,
         env,
         log: extensionLog
       });

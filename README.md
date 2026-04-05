@@ -102,9 +102,9 @@ fetch:
 
 The shared helper is initialized once at app startup, all production outbound provider calls use it, and inbound webhook handling keeps using direct local server traffic.
 
-## Local Extensions
+## Extensions
 
-Built-in GitHub registration stays explicit in `src/app/main.ts`, and configured local extensions load immediately after that built-in wiring. This keeps the shipped provider example visible while still letting operators add their own providers and app services from local modules.
+Use extensions when you want to add another workflow provider, support other Git hosting workflows, or expose custom local APIs and startup services without modifying the core runtime.
 
 ```yaml
 extensions:
@@ -120,12 +120,12 @@ Extension loading rules:
 - `extensions` preserves YAML declaration order.
 - `use` resolves relative to `service.yml` and must point to a local `.js`, `.mjs`, or `.cjs` file, or to a local package directory with a package entrypoint.
 - The loader uses `module.default ?? module`.
-- Each module must export `API_VERSION: 1` plus `init(builder, context)`.
+- Each module must export an `API_VERSION` that matches the runtime-supported extension API version, plus `init(builder, context)`.
 - Duplicate provider keys still fail fast across built-ins and extensions.
 
 This repository ships a standalone example at `extension/example.js`. It registers one app service plus one HTTP provider route based on `context.config.my_url`.
 
-For editor help in JavaScript or TypeScript extensions, use the type-only declaration file at `extension/contract.d.ts`. The example extension already shows the intended JSDoc import pattern, and runtime loading does not require the extension to import Coding Automator code.
+For editor help in JavaScript or TypeScript extensions, use the standalone declaration file at `extension/extensions.d.ts`. The example extension already shows the intended JSDoc import pattern, and the declaration file is self-contained so extension authors can vendor it into their own project for development without taking a runtime dependency on Coding Automator.
 
 ## Expanded Workflow Example
 

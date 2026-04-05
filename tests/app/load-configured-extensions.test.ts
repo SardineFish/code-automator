@@ -82,7 +82,8 @@ test("loadConfiguredExtensions loads local files and package directories in conf
 
   await loadConfiguredExtensions(
     builder,
-    config,
+    config.extensions,
+    config.configDir,
     {
       TEST_EXTENSION_ENV: "present"
     },
@@ -136,7 +137,14 @@ test("loadConfiguredExtensions rejects missing extension modules", async (t) => 
   ];
 
   await assert.rejects(
-    () => loadConfiguredExtensions(createRecordingBuilder([], []), config, {}, createNoOpLogSink()),
+    () =>
+      loadConfiguredExtensions(
+        createRecordingBuilder([], []),
+        config.extensions,
+        config.configDir,
+        {},
+        createNoOpLogSink()
+      ),
     /missing-extension'.*was not found/
   );
 });
@@ -163,7 +171,14 @@ test("loadConfiguredExtensions rejects invalid extension export shapes", async (
   ];
 
   await assert.rejects(
-    () => loadConfiguredExtensions(createRecordingBuilder([], []), config, {}, createNoOpLogSink()),
+    () =>
+      loadConfiguredExtensions(
+        createRecordingBuilder([], []),
+        config.extensions,
+        config.configDir,
+        {},
+        createNoOpLogSink()
+      ),
     /must export an init\(builder, context\) function/
   );
 });
@@ -191,7 +206,14 @@ test("loadConfiguredExtensions rejects mismatched API versions", async (t) => {
   ];
 
   await assert.rejects(
-    () => loadConfiguredExtensions(createRecordingBuilder([], []), config, {}, createNoOpLogSink()),
+    () =>
+      loadConfiguredExtensions(
+        createRecordingBuilder([], []),
+        config.extensions,
+        config.configDir,
+        {},
+        createNoOpLogSink()
+      ),
     /requires 1/
   );
 });
@@ -236,7 +258,7 @@ test("loadConfiguredExtensions preserves provider collision failures against exi
   );
 
   await assert.rejects(
-    () => loadConfiguredExtensions(builder, config, {}, createNoOpLogSink()),
+    () => loadConfiguredExtensions(builder, config.extensions, config.configDir, {}, createNoOpLogSink()),
     /already registered/
   );
 });
