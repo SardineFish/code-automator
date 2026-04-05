@@ -10,6 +10,7 @@ export function createServiceConfig(): ServiceConfig {
     logging: {
       level: "info"
     },
+    extensions: [],
     tracking: {
       stateFile: "/tmp/github-agent-orchestrator/state.json",
       logFile: "/tmp/github-agent-orchestrator/runs.jsonl"

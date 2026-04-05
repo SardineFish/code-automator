@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { initFetchHelper } from "../providers/http/fetch-helper.js";
 import type { ServiceConfig } from "../types/config.js";
+import type { AppExtensionDefinition } from "../types/extensions.js";
 import type { HttpProviderKey, NonHttpProviderKey } from "../types/provider-keys.js";
 import type {
   AnyProvider,
@@ -18,6 +19,7 @@ import {
 } from "./default-app-runtime.js";
 import { createAppContext } from "./create-app-context.js";
 import { startHttpAppService, type HttpAppService } from "./http-app-service.js";
+import { loadConfiguredExtensions } from "./load-configured-extensions.js";
 
 export type AppOptions = AppRuntimeOverrides;
 export type { ProviderHandler } from "../types/runtime.js";
@@ -37,6 +39,8 @@ class AppBuilder {
   readonly #providers = new Map<string, AnyProvider>();
   readonly #services: AppServiceHandler[] = [];
   #initializePromise?: Promise<WorkflowTrackingCleanup>;
+  readonly #extensions: AppExtensionDefinition[] = [];
+  #loadExtensionsPromise?: Promise<void>;
 
   constructor(
     private readonly config: ServiceConfig,
@@ -79,7 +83,21 @@ class AppBuilder {
     return this;
   }
 
+  extension(id: string, use: string, config?: unknown): AppBuilder {
+    if (id.trim() === "") {
+      throw new Error("Extension id must be a non-empty string.");
+    }
+
+    if (use.trim() === "") {
+      throw new Error("Extension path must be a non-empty string.");
+    }
+
+    this.#extensions.push({ id, use, config });
+    return this;
+  }
+
   async listen(): Promise<AppLifecycle> {
+    await this.loadExtensions();
     const trackingCleanup = await this.initialize();
     const managedApp = createAppContext({
       config: this.config,
@@ -134,6 +152,17 @@ class AppBuilder {
   private initialize(): Promise<WorkflowTrackingCleanup> {
     this.#initializePromise ??= initializeWorkflowTracking(this.config, this.runtime);
     return this.#initializePromise;
+  }
+
+  private loadExtensions(): Promise<void> {
+    this.#loadExtensionsPromise ??= loadConfiguredExtensions(
+      this,
+      this.#extensions,
+      this.config.configDir,
+      this.runtime.baseEnv,
+      this.runtime.logSink
+    );
+    return this.#loadExtensionsPromise;
   }
 }
 

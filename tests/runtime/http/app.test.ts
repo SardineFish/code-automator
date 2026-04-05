@@ -1,7 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import test from "node:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test, { type TestContext } from "node:test";
 
 import { App, type ProviderHandler } from "../../../src/app/app.js";
 import { createServiceConfig } from "../../fixtures/service-config.js";
@@ -32,6 +35,46 @@ test("App rejects duplicate provider keys", () => {
     }),
     /already registered/
   );
+});
+
+test("App loads registered extensions during listen", async (t) => {
+  const dir = createTempDir(t, "gao-app-extension-");
+  const extensionPath = path.join(dir, "listen-extension.js");
+  const app = App(createAppConfig(), createRuntimeOptions())
+    .provider<[IncomingMessage, ServerResponse], void>(
+      "/chat",
+      async (_context, _request, response) => {
+        response.statusCode = 204;
+        response.end();
+      }
+    )
+    .extension("listen-extension", extensionPath, { routePath: "/custom-hook" });
+
+  writeFileSync(
+    extensionPath,
+    `export default {
+  API_VERSION: 1,
+  async init(builder, context) {
+    builder.provider(context.config.routePath, async (_workflow, _request, response) => {
+      response.statusCode = 204;
+      response.end();
+    });
+  }
+};
+`
+  );
+
+  const started = await app.listen();
+  const address = started.server.address();
+
+  if (!address || typeof address === "string") {
+    throw new Error("Unexpected test server address.");
+  }
+
+  const result = await fetch(`http://127.0.0.1:${address.port}/custom-hook`, { method: "POST" });
+
+  assert.equal(result.status, 204);
+  await started.shutdown();
 });
 
 test("App starts registered services and runs their shutdown handlers", async () => {
@@ -245,6 +288,12 @@ function createDeferred<T>() {
   });
 
   return { promise, resolve, reject };
+}
+
+function createTempDir(t: TestContext, prefix: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), prefix));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
 }
 
 async function tryFetch(url: string) {

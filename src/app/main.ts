@@ -23,10 +23,15 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
   requireEnv(baseEnv, "GITHUB_WEBHOOK_SECRET");
   requireEnv(baseEnv, "GITHUB_APP_PRIVATE_KEY_PATH");
 
-  const app = await App(runtimeConfig, runtimeOptions)
+  const builder = App(runtimeConfig, runtimeOptions)
     .provider(github.url, githubProvider)
-    .service(githubRedeliveryService)
-    .listen();
+    .service(githubRedeliveryService);
+
+  for (const extension of runtimeConfig.extensions) {
+    builder.extension(extension.id, extension.use, extension.config);
+  }
+
+  const app = await builder.listen();
   const shutdown = createCliShutdownCoordinator({
     app,
     workflowTracker: runtimeOptions.workflowTracker

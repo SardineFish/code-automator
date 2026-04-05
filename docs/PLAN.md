@@ -239,6 +239,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Thread validated HTTP route keys such as `gh.url` and built-in request pathname dispatch through that shared type while keeping runtime dispatch behavior unchanged.
 - Add focused compile-time and runtime coverage plus operator docs for the slash-prefixed HTTP route convention and namespaced non-HTTP provider keys.
 
+### Plan 37: Config-driven local extensions for providers and app services [done]
+
+- Add a top-level ordered `extensions` config mapping that resolves local module paths from the service config directory while preserving arbitrary extension-owned `config` payloads.
+- Load configured extensions after the explicit built-in GitHub registration in `src/app/main.ts`, and let them register providers and app services through the existing builder contract with exact `API_VERSION` checks.
+- Add focused coverage, a standalone `extension/example.js`, and a type-only extension contract so operators can extend startup without changing core wiring.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.
