@@ -6,6 +6,24 @@ import type { AppContext } from "../../src/types/runtime.js";
 import { createServiceConfig } from "../fixtures/service-config.js";
 import { createNoOpLogSink } from "../fixtures/log-sink.js";
 
+test("startGitHubRedeliveryService does nothing when gh is absent", async () => {
+  let scheduled = false;
+  const config = createServiceConfig();
+  delete config.gh;
+
+  await startGitHubRedeliveryService(
+    createAppContext(config, () => {
+      scheduled = true;
+      return () => undefined;
+    }),
+    () => {
+      throw new Error("should not create a redelivery worker");
+    }
+  );
+
+  assert.equal(scheduled, false);
+});
+
 test("startGitHubRedeliveryService registers the built-in interval scheduler", async () => {
   let runCount = 0;
   let scheduled:

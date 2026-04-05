@@ -53,6 +53,31 @@ workflow:
     prompt: Handle request \${in.content}
 `;
 
+const validConfigWithoutGitHub = `
+server:
+  host: 0.0.0.0
+  port: 3000
+tracking:
+  stateFile: state.json
+  logFile: runs.jsonl
+workspace:
+  enabled: false
+  baseDir: /tmp/gao
+  cleanupAfterRun: false
+chat-bot:
+  url: /chat
+executors:
+  codex:
+    run: codex exec \${prompt}
+    timeoutMs: 900000
+workflow:
+  issue-plan:
+    on:
+      - issue:open
+    use: codex
+    prompt: Plan issue \${in.issueId}
+`;
+
 test("parseServiceConfig returns ordered workflows and typed config", () => {
   const parsed = parseServiceConfig(validConfig, "/tmp/configs/test.yml");
 
@@ -78,6 +103,14 @@ test("parseServiceConfig returns ordered workflows and typed config", () => {
     }
   });
   assert.deepEqual(parsed["chat-bot"], { url: "/chat" });
+});
+
+test("parseServiceConfig accepts configs without gh and preserves provider-owned sections", () => {
+  const parsed = parseServiceConfig(validConfigWithoutGitHub, "/tmp/configs/test.yml");
+
+  assert.equal(parsed.gh, undefined);
+  assert.deepEqual(parsed["chat-bot"], { url: "/chat" });
+  assert.equal(parsed.workflow[0].name, "issue-plan");
 });
 
 test("parseServiceConfig accepts ordered local extensions and preserves raw config values", () => {
