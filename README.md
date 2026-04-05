@@ -86,6 +86,12 @@ This is the simplest end-to-end setup:
 
 Relative `tracking` paths and workspace base directories resolve from the YAML file location. The config loader preserves additional top-level provider sections, but the shipped startup wiring currently registers only `gh`.
 
+## Provider Keys
+
+Slash-prefixed provider keys are reserved for the built-in HTTP listener. The built-in HTTP service uses the exact request pathname as the provider lookup key, so route handlers should register on keys such as `/`, `/gh-hook`, or `/custom/api`.
+
+Custom non-HTTP providers still use the same unified provider registry, but they should prefer namespaced keys such as `github:redelivery` or `foo:bar` when practical so they are visually distinct from HTTP routes.
+
 ## Outbound Fetch
 
 Shared outbound provider API traffic retries thrown network failures up to 3 times by default.
