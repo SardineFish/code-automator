@@ -245,6 +245,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Load configured extensions after the explicit built-in GitHub registration in `src/app/main.ts`, and let them register providers and app services through the existing builder contract with exact `API_VERSION` checks.
 - Add focused coverage, a standalone `extension/example.js`, and a type-only extension contract so operators can extend startup without changing core wiring.
 
+### Plan 38: Extension runtime config access [done]
+
+- Add `extensionConfig` to runtime workflow and app contexts, and thread the same generic through provider, service, and extension-builder contracts without changing app-level `config` semantics.
+- Bind extension-owned config at the extension registration seam so registered providers and services receive extension-scoped runtime wrappers, and workflows created by extension services inherit the same config.
+- Update focused runtime and type coverage plus the standalone extension contract, example, and operator docs so the new extension-config access path stays documented and locked in.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

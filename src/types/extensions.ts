@@ -17,15 +17,15 @@ export interface AppExtensionContext<TConfig = unknown> {
   log: LogSink;
 }
 
-export interface AppExtensionBuilder {
+export interface AppExtensionBuilder<TConfig = unknown> {
   provider<TArgs extends unknown[] = unknown[], TResult = unknown>(
     key: string,
-    handler: ProviderHandler<TArgs, TResult>
-  ): AppExtensionBuilder;
-  service(handler: AppServiceHandler): AppExtensionBuilder;
+    handler: ProviderHandler<TArgs, TResult, TConfig>
+  ): AppExtensionBuilder<TConfig>;
+  service(handler: AppServiceHandler<TConfig>): AppExtensionBuilder<TConfig>;
 }
 
 export interface AppExtensionModule<TConfig = unknown> {
   API_VERSION: typeof APP_EXTENSION_API_VERSION;
-  init(builder: AppExtensionBuilder, context: AppExtensionContext<TConfig>): void | Promise<void>;
+  init(builder: AppExtensionBuilder<TConfig>, context: AppExtensionContext<TConfig>): void | Promise<void>;
 }

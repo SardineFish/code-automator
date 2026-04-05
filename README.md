@@ -134,6 +134,8 @@ This repository ships a standalone example at `extension/example.js`. It registe
 
 For editor help in JavaScript or TypeScript extensions, use the standalone declaration file at `extension/extensions.d.ts`. The example extension already shows the intended JSDoc import pattern, and the declaration file is self-contained so extension authors can vendor it into their own project for development without taking a runtime dependency on Coding Automator.
 
+During `init()`, `context.config` is still the extension-owned config blob. At runtime, provider handlers receive that same blob on `workflow.extensionConfig`, and extension services receive it on `app.extensionConfig`, while `config` on those runtime contexts remains the app-level service config.
+
 ## Expanded Workflow Example
 
 Once the basic issue-to-PR flow works, you can split planning, implementation, and PR follow-up into separate workflows.

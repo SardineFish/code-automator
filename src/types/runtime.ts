@@ -78,8 +78,9 @@ export interface SubmittedTrigger {
   env: Record<string, string>;
 }
 
-export interface WorkflowContext {
+export interface WorkflowContext<TExtensionConfig = unknown> {
   config: ServiceConfig;
+  extensionConfig: TExtensionConfig;
   env: NodeJS.ProcessEnv;
   log: LogSink;
   trigger(name: TriggerKey, payload: TriggerSubmissionInput): void;
@@ -92,20 +93,25 @@ export interface WorkflowContext {
 
 export type ProviderHandler<
   TArgs extends unknown[] = unknown[],
-  TResult = unknown
-> = (ctx: WorkflowContext, ...args: TArgs) => Promise<TResult>;
+  TResult = unknown,
+  TExtensionConfig = unknown
+> = (ctx: WorkflowContext<TExtensionConfig>, ...args: TArgs) => Promise<TResult>;
 
-export type HttpRequestProvider = ProviderHandler<[IncomingMessage, ServerResponse], void>;
+export type HttpRequestProvider<TExtensionConfig = unknown> = ProviderHandler<
+  [IncomingMessage, ServerResponse],
+  void,
+  TExtensionConfig
+>;
 
-export type AnyProvider = ProviderHandler<any[], unknown>;
+export type AnyProvider = ProviderHandler<any[], unknown, any>;
 
 export type ProviderArgs<T extends AnyProvider> =
-  T extends (ctx: WorkflowContext, ...args: infer A) => Promise<unknown>
+  T extends (ctx: WorkflowContext<any>, ...args: infer A) => Promise<unknown>
     ? A
     : never;
 
 export type ProviderResult<T extends AnyProvider> =
-  T extends (ctx: WorkflowContext, ...args: unknown[]) => Promise<infer R>
+  T extends (ctx: WorkflowContext<any>, ...args: unknown[]) => Promise<infer R>
     ? R
     : never;
 
@@ -116,11 +122,12 @@ export interface AppJobIntervalOptions {
   runImmediately?: boolean;
 }
 
-export interface AppContext {
+export interface AppContext<TExtensionConfig = unknown> {
   config: ServiceConfig;
+  extensionConfig: TExtensionConfig;
   env: NodeJS.ProcessEnv;
   log: LogSink;
-  createWorkflow(source: string): WorkflowContext;
+  createWorkflow(source: string): WorkflowContext<TExtensionConfig>;
   getProvider(key: HttpProviderKey): HttpRequestProvider;
   getProvider<T extends AnyProvider, TKey extends string = string>(key: NonHttpProviderKey<TKey>): T;
   trackJob<TResult>(debugName: string, job: Promise<TResult>): Promise<TResult>;
@@ -138,4 +145,6 @@ export interface AppContext {
   on(eventName: "shutdown", handler: () => Promise<void>): () => void;
 }
 
-export type AppServiceHandler = (app: AppContext) => Promise<void>;
+export type AppServiceHandler<TExtensionConfig = unknown> = (
+  app: AppContext<TExtensionConfig>
+) => Promise<void>;

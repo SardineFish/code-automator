@@ -72,6 +72,7 @@ function createAppContext(
 ): AppContext {
   return {
     config,
+    extensionConfig: undefined,
     env: {
       GITHUB_APP_PRIVATE_KEY_PATH: "/tmp/app.pem"
     },

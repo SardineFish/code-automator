@@ -52,6 +52,10 @@ test("createAppContext creates multiple independent workflows", async () => {
   const first = managed.appContext.createWorkflow("/one");
   const second = managed.appContext.createWorkflow("/two");
 
+  assert.equal(managed.appContext.extensionConfig, undefined);
+  assert.equal(first.extensionConfig, undefined);
+  assert.equal(second.extensionConfig, undefined);
+
   first.trigger("issue:command:plan", {
     in: { event: "issue:command:plan", issueId: "7" }
   });
