@@ -22,21 +22,14 @@ test("App dispatches exact provider routes and lets providers own the response",
 
 test("App rejects duplicate provider keys", () => {
   const builder = App(createAppConfig(), createRuntimeOptions());
-  builder.provider<[IncomingMessage, ServerResponse], void>(
-    "/chat",
-    async (_context, _request, response) => {
-      response.end("ok");
-    }
-  );
+  builder.provider("/chat", async (_context, _request, response) => {
+    response.end("ok");
+  });
 
   assert.throws(
-    () =>
-      builder.provider<[IncomingMessage, ServerResponse], void>(
-        "/chat",
-        async (_context, _request, response) => {
-          response.end("duplicate");
-        }
-      ),
+    () => builder.provider("/chat", async (_context, _request, response) => {
+      response.end("duplicate");
+    }),
     /already registered/
   );
 });
@@ -44,13 +37,10 @@ test("App rejects duplicate provider keys", () => {
 test("App starts registered services and runs their shutdown handlers", async () => {
   const events: string[] = [];
   const app = await App(createAppConfig(), createRuntimeOptions())
-    .provider<[IncomingMessage, ServerResponse], void>(
-      "/chat",
-      async (_context, _request, response) => {
-        response.statusCode = 204;
-        response.end();
-      }
-    )
+    .provider("/chat", async (_context, _request, response) => {
+      response.statusCode = 204;
+      response.end();
+    })
     .service(async (appContext) => {
       events.push("start");
       appContext.on("shutdown", async () => {
@@ -67,13 +57,10 @@ test("App starts registered services and runs their shutdown handlers", async ()
 test("App shutdown waits for tracked app jobs before resolving", async () => {
   const release = createDeferred<void>();
   const app = await App(createAppConfig(), createRuntimeOptions())
-    .provider<[IncomingMessage, ServerResponse], void>(
-      "/chat",
-      async (_context, _request, response) => {
-        response.statusCode = 204;
-        response.end();
-      }
-    )
+    .provider("/chat", async (_context, _request, response) => {
+      response.statusCode = 204;
+      response.end();
+    })
     .service(async (appContext) => {
       appContext.trackJob("startup-job", release.promise);
     })

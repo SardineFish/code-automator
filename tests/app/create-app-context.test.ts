@@ -3,7 +3,9 @@ import test from "node:test";
 
 import { createAppContext, UnknownProviderError } from "../../src/app/create-app-context.js";
 import type { AppRuntimeOptions } from "../../src/app/default-app-runtime.js";
+import type { HttpProviderKey } from "../../src/types/provider-keys.js";
 import type {
+  HttpRequestProvider,
   ProviderHandler,
   WorkflowContext,
   WorkflowContextTerminalListeners
@@ -78,6 +80,21 @@ test("createAppContext returns registered providers and trusts caller-declared t
     managed.appContext.getProvider<(ctx: WorkflowContext) => Promise<number>>("chat"),
     provider
   );
+});
+
+test("createAppContext returns typed HTTP providers for slash-prefixed keys", () => {
+  const key: HttpProviderKey = "/chat";
+  const provider: HttpRequestProvider = async (_workflow, _request, response) => {
+    response.end("ok");
+  };
+  const managed = createAppContext({
+    config: createServiceConfig(),
+    runtime: createRuntime(),
+    providers: new Map([[key, provider]])
+  });
+
+  assert.equal(managed.appContext.getProvider(key), provider);
+  assert.equal(managed.appContext.getProvider("/chat"), provider);
 });
 
 test("createAppContext throws UnknownProviderError for unknown provider keys", () => {

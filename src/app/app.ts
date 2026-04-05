@@ -1,6 +1,14 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+
 import { initFetchHelper } from "../providers/http/fetch-helper.js";
 import type { ServiceConfig } from "../types/config.js";
-import type { AnyProvider, AppServiceHandler, ProviderHandler } from "../types/runtime.js";
+import type { HttpProviderKey, NonHttpProviderKey } from "../types/provider-keys.js";
+import type {
+  AnyProvider,
+  AppServiceHandler,
+  HttpRequestProvider,
+  ProviderHandler
+} from "../types/runtime.js";
 import {
   createAppRuntimeOptions,
   type AppRuntimeOptions,
@@ -43,6 +51,14 @@ class AppBuilder {
     });
   }
 
+  provider<TArgs extends [IncomingMessage, ServerResponse] = [IncomingMessage, ServerResponse], TResult = void>(
+    key: HttpProviderKey,
+    handler: ProviderHandler<TArgs, TResult> & HttpRequestProvider
+  ): AppBuilder;
+  provider<TArgs extends unknown[] = unknown[], TResult = unknown, TKey extends string = string>(
+    key: NonHttpProviderKey<TKey>,
+    handler: ProviderHandler<TArgs, TResult>
+  ): AppBuilder;
   provider<TArgs extends unknown[] = unknown[], TResult = unknown>(
     key: string,
     handler: ProviderHandler<TArgs, TResult>

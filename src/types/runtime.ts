@@ -1,6 +1,9 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+
 import type { TriggerKey } from "./triggers.js";
 import type { ServiceConfig, WorkflowDefinition } from "./config.js";
 import type { LogSink } from "./logging.js";
+import type { HttpProviderKey, NonHttpProviderKey } from "./provider-keys.js";
 import type { WorkflowRunStatus } from "./tracking.js";
 
 export interface WebhookGateContext {
@@ -92,6 +95,8 @@ export type ProviderHandler<
   TResult = unknown
 > = (ctx: WorkflowContext, ...args: TArgs) => Promise<TResult>;
 
+export type HttpRequestProvider = ProviderHandler<[IncomingMessage, ServerResponse], void>;
+
 export type AnyProvider = ProviderHandler<any[], unknown>;
 
 export type ProviderArgs<T extends AnyProvider> =
@@ -116,7 +121,8 @@ export interface AppContext {
   env: NodeJS.ProcessEnv;
   log: LogSink;
   createWorkflow(source: string): WorkflowContext;
-  getProvider<T extends AnyProvider>(key: string): T;
+  getProvider(key: HttpProviderKey): HttpRequestProvider;
+  getProvider<T extends AnyProvider, TKey extends string = string>(key: NonHttpProviderKey<TKey>): T;
   trackJob<TResult>(debugName: string, job: Promise<TResult>): Promise<TResult>;
   scheduleInterval(
     debugName: string,

@@ -1,5 +1,6 @@
 import { ConfigError } from "../../config/config-error.js";
 import type { GitHubProviderConfig, GitHubRedeliveryConfig, WhitelistConfig } from "../../types/config.js";
+import type { HttpProviderKey } from "../../types/provider-keys.js";
 
 export interface ResolvedGitHubProviderConfig
   extends Omit<GitHubProviderConfig, "redelivery" | "requireMention" | "ignoreApprovalReview"> {
@@ -45,14 +46,14 @@ function readRedelivery(value: unknown): false | GitHubRedeliveryConfig {
   };
 }
 
-function readRoutePath(value: unknown, path: string): string {
+function readRoutePath(value: unknown, path: string): HttpProviderKey {
   const routePath = readNonEmptyString(value, path);
 
   if (!routePath.startsWith("/")) {
     throw new ConfigError(path, "Expected a path that starts with '/'.");
   }
 
-  return routePath;
+  return routePath as HttpProviderKey;
 }
 
 function readStringArray(value: unknown, path: string): string[] {
