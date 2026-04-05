@@ -8,6 +8,8 @@ const requiredPaths = [
   "README.md",
   "AGENTS.md",
   "ARCHITECTURE.md",
+  "extension/contract.d.ts",
+  "extension/example.js",
   "docs/PLAN.md",
   "docs/QUALITY_SCORE.md",
   "docs/design-docs/index.md",

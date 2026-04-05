@@ -12,6 +12,7 @@ import type {
   WorkflowDefinition,
   WorkspaceConfig
 } from "../types/config.js";
+import type { AppExtensionDefinition } from "../types/extensions.js";
 import { runtimeLogLevels } from "../types/logging.js";
 import { isTriggerKey } from "../types/triggers.js";
 import { ConfigError } from "./config-error.js";
@@ -33,14 +34,16 @@ export function validateServiceConfigDocument(
   baseDir: string
 ): ServiceConfig {
   const root = expectMap(document.contents, "root");
+  const rawConfig = document.toJS() as Record<string, unknown>;
   const server = readServerConfig(root);
   const logging = readLoggingConfig(root);
   const fetch = readFetchConfig(root.get("fetch", true));
+  const extensions = readExtensions(root, rawConfig, baseDir);
   const workspace = readWorkspaceConfig(root, baseDir);
   const tracking = readTrackingConfig(root, baseDir);
   const executors = readExecutors(root, baseDir);
   const workflow = readWorkflow(root, new Set(Object.keys(executors)), baseDir);
-  const providerSections = readProviderSections(document);
+  const providerSections = readProviderSections(rawConfig);
 
   return {
     ...providerSections,
@@ -48,6 +51,7 @@ export function validateServiceConfigDocument(
     server,
     logging,
     fetch,
+    extensions,
     workspace,
     tracking,
     executors,
@@ -112,6 +116,37 @@ function readFetchConfig(node: unknown): FetchConfig | undefined {
     proxy,
     maxRetry
   };
+}
+
+function readExtensions(
+  root: ReturnType<typeof expectMap>,
+  rawConfig: Record<string, unknown>,
+  baseDir: string
+): AppExtensionDefinition[] {
+  const extensionsNode = root.get("extensions", true);
+
+  if (!extensionsNode) {
+    return [];
+  }
+
+  const extensions = expectMap(extensionsNode, "extensions");
+  const rawExtensions = readRawExtensions(rawConfig.extensions);
+
+  return extensions.items.map((item) => {
+    const id = readString(item.key, "extensions.<key>");
+    const extensionPath = `extensions.${id}`;
+    const extension = expectMap(item.value, extensionPath);
+    const use = resolveConfigPath(
+      readString(readRequiredNode(extension, "use", `${extensionPath}.use`), `${extensionPath}.use`),
+      baseDir
+    );
+
+    return {
+      id,
+      use,
+      config: rawExtensions[id]?.config
+    };
+  });
 }
 
 function readWorkspaceConfig(root: ReturnType<typeof expectMap>, baseDir: string): WorkspaceConfig {
@@ -256,8 +291,7 @@ function readOptionalProxy(node: unknown, path: string): string | undefined {
   return proxy;
 }
 
-function readProviderSections(document: Document.Parsed): Record<string, unknown> {
-  const rawConfig = document.toJS() as Record<string, unknown>;
+function readProviderSections(rawConfig: Record<string, unknown>): Record<string, unknown> {
   const providerSections: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(rawConfig)) {
@@ -273,6 +307,7 @@ const CORE_TOP_LEVEL_KEYS = new Set([
   "server",
   "logging",
   "fetch",
+  "extensions",
   "tracking",
   "workspace",
   "executors",
@@ -316,4 +351,18 @@ function readOptionalExecutorWorkspace(
   }
 
   return result;
+}
+
+function readRawExtensions(
+  value: unknown
+): Record<string, { use?: unknown; config?: unknown }> {
+  if (value === undefined) {
+    return {};
+  }
+
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as Record<string, { use?: unknown; config?: unknown }>;
 }

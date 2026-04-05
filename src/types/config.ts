@@ -1,5 +1,6 @@
 import type { TriggerKey } from "./triggers.js";
 import type { RuntimeLogLevel } from "./logging.js";
+import type { AppExtensionDefinition } from "./extensions.js";
 
 export interface ServerConfig {
   host: string;
@@ -76,6 +77,7 @@ export interface AppConfig {
   server: ServerConfig;
   logging: LoggingConfig;
   fetch?: FetchConfig;
+  extensions: AppExtensionDefinition[];
   workspace: WorkspaceConfig;
   tracking: TrackingConfig;
   gh?: GitHubProviderConfig;

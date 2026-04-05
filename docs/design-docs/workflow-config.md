@@ -16,6 +16,12 @@ tracking:
 fetch:
   proxy: socks5://proxy.internal:1080
   maxRetry: 3
+extensions:
+  example:
+    use: ./extension/example.js
+    config:
+      my_url: /example-hook
+      message: hello from extension
 workspace:
   enabled: false
   baseDir: /var/lib/coding-automator/workspaces
@@ -95,13 +101,14 @@ workflow:
 - `fetch`: optional shared outbound fetch settings for provider HTTP traffic.
 - `fetch.proxy`: optional outbound proxy URI. Supported schemes are `http`, `https`, and `socks5`.
 - `fetch.maxRetry`: optional retry budget for thrown network failures. The default is `3`.
+- `extensions`: optional ordered mapping of local extension modules. Each entry accepts required `use` plus extension-owned `config`.
 - `workspace`: workspace lifecycle policy for executor runs.
 - `executors`: named command templates plus static environment variables.
 - `executors.<name>.workspace`: optional workspace override. Use `true` to force allocation with `workspace.baseDir`, `false` to disable allocation, a string to override the parent workspace directory, a mapping with `baseDir` and/or `key`, or omit it to inherit `workspace.enabled`.
 - `executors.<name>.timeoutMs`: optional per-executor timeout in milliseconds.
 - `workflow`: ordered workflow definitions keyed by workflow name.
 - Any other top-level key is provider-owned configuration. The core app preserves those sections and registered providers validate them at startup.
-- The shipped startup wiring currently reads and registers `gh`. Other provider sections are preserved for future startup registration.
+- The shipped startup wiring keeps GitHub explicit in `src/app/main.ts`, then loads configured local extensions in order.
 - `gh.requireMention` is optional and defaults to `true`. Set it to `false` to allow issue comments and slash commands on issues without a leading bot mention.
 - `gh.ignoreApprovalReview` is optional and defaults to `true`. When enabled, approved `pull_request_review` events are ignored instead of emitting `pr:review`.
 - Inline `pull_request_review_comment` deliveries with `comment.pull_request_review_id` are ignored by the GitHub provider, so only standalone PR review comments emit `pr:comment` or `pr:at`.
@@ -117,6 +124,16 @@ workflow:
   - `trigger(name, { in, env })`: register one candidate trigger with provider-defined template input and optional per-run environment variables.
   - `submit()`: match all submitted triggers against workflows and launch at most one workflow.
 - Providers may submit more than one trigger for one request, but the core runtime still selects only one workflow.
+
+## Extension Runtime Model
+
+- `extensions.<id>.use` accepts only local filesystem paths and resolves relative to the YAML config file directory when it is not already absolute.
+- A `use` target may point to one `.js`, `.mjs`, or `.cjs` file, or to one local package directory that resolves through its package entrypoint.
+- Extension modules load through `module.default ?? module`.
+- Each extension must export one object with exact `API_VERSION: 1` plus `init(builder, context)`.
+- `builder` exposes the same `provider()` and `service()` registration seam used by built-ins.
+- `context` exposes `id`, extension-owned `config`, `configDir`, `env`, and an extension-scoped `log`.
+- Extension startup is local-only and high-trust. The runtime does not sandbox extension code or download remote modules.
 
 ## Matching Rules
 
@@ -189,5 +206,6 @@ workflow:
 
 - The service starts with `npm start -- --config /path/to/service.yml`.
 - The shipped GitHub provider validates `gh.*` and requires `GITHUB_WEBHOOK_SECRET` plus `GITHUB_APP_PRIVATE_KEY_PATH` during startup.
+- `src/app/main.ts` keeps the built-in GitHub provider and redelivery service registration explicit, then loads configured local extensions before `listen()`.
 - When `gh.redelivery` is enabled, the GitHub provider registers a background app service that uses the built-in app scheduler, waits one configured interval before its first scan, then scans the last 3 days of app webhook deliveries, retries unresolved failures once per delivery GUID, and persists its checkpoint beside the tracked run artifacts.
 - App shutdown cancels pending app-managed scheduled waits, logs any tracked app jobs it is waiting on, logs a settle marker for each tracked job as it completes during shutdown, and still leaves detached workflow draining to the separate CLI `workflowTracker` boundary.

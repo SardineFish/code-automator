@@ -84,7 +84,7 @@ This is the simplest end-to-end setup:
 - each run gets a fresh non-keyed workspace under `workspace.baseDir`
 - no reusable session state is kept between runs
 
-Relative `tracking` paths and workspace base directories resolve from the YAML file location. The config loader preserves additional top-level provider sections, but the shipped startup wiring currently registers only `gh`.
+Relative `tracking` paths and workspace base directories resolve from the YAML file location. The config loader preserves provider-owned top-level sections such as `gh`, and the shipped startup wiring keeps GitHub explicit while also loading any configured local extensions.
 
 ## Outbound Fetch
 
@@ -101,6 +101,31 @@ fetch:
 ```
 
 The shared helper is initialized once at app startup, all production outbound provider calls use it, and inbound webhook handling keeps using direct local server traffic.
+
+## Local Extensions
+
+Built-in GitHub registration stays explicit in `src/app/main.ts`, and configured local extensions load immediately after that built-in wiring. This keeps the shipped provider example visible while still letting operators add their own providers and app services from local modules.
+
+```yaml
+extensions:
+  example:
+    use: ./extension/example.js
+    config:
+      my_url: /example-hook
+      message: hello from a local extension
+```
+
+Extension loading rules:
+
+- `extensions` preserves YAML declaration order.
+- `use` resolves relative to `service.yml` and must point to a local `.js`, `.mjs`, or `.cjs` file, or to a local package directory with a package entrypoint.
+- The loader uses `module.default ?? module`.
+- Each module must export `API_VERSION: 1` plus `init(builder, context)`.
+- Duplicate provider keys still fail fast across built-ins and extensions.
+
+This repository ships a standalone example at `extension/example.js`. It registers one app service plus one HTTP provider route based on `context.config.my_url`.
+
+For editor help in JavaScript or TypeScript extensions, use the type-only declaration file at `extension/contract.d.ts`. The example extension already shows the intended JSDoc import pattern, and runtime loading does not require the extension to import Coding Automator code.
 
 ## Expanded Workflow Example
 

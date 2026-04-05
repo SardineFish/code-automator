@@ -1,14 +1,21 @@
 import type { ServiceConfig } from "../types/config.js";
 import { App, type AppLifecycle } from "./app.js";
+import { createAppRuntimeOptions, resolveBaseEnv } from "./default-app-runtime.js";
+import { loadConfiguredExtensions } from "./load-configured-extensions.js";
 import { resolveGitHubProviderConfig } from "./providers/github-config.js";
 import { githubRedeliveryService } from "./providers/github-redelivery-service.js";
 import { githubProvider } from "./providers/github-provider.js";
 
-export function startService(config: ServiceConfig): Promise<AppLifecycle> {
+export async function startService(config: ServiceConfig): Promise<AppLifecycle> {
   const github = resolveGitHubProviderConfig(config.gh);
-
-  return App({ ...config, gh: github })
+  const baseEnv = resolveBaseEnv(undefined);
+  const runtimeConfig = { ...config, gh: github };
+  const runtimeOptions = createAppRuntimeOptions(runtimeConfig, { baseEnv });
+  const builder = App(runtimeConfig, runtimeOptions)
     .provider(github.url, githubProvider)
-    .service(githubRedeliveryService)
-    .listen();
+    .service(githubRedeliveryService);
+
+  await loadConfiguredExtensions(builder, runtimeConfig, baseEnv, runtimeOptions.logSink);
+
+  return builder.listen();
 }

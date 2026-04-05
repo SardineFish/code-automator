@@ -59,6 +59,7 @@ test("parseServiceConfig returns ordered workflows and typed config", () => {
   assert.equal(parsed.configDir, "/tmp/configs");
   assert.equal(parsed.logging.level, "info");
   assert.equal(parsed.fetch, undefined);
+  assert.deepEqual(parsed.extensions, []);
   assert.equal(parsed.workspace.baseDir, "/tmp/gao");
   assert.equal(parsed.tracking.stateFile, "/tmp/configs/state.json");
   assert.equal(parsed.tracking.logFile, "/tmp/configs/runs.jsonl");
@@ -77,6 +78,72 @@ test("parseServiceConfig returns ordered workflows and typed config", () => {
     }
   });
   assert.deepEqual(parsed["chat-bot"], { url: "/chat" });
+});
+
+test("parseServiceConfig accepts ordered local extensions and preserves raw config values", () => {
+  const parsed = parseServiceConfig(
+    `${validConfig}
+extensions:
+  example-file:
+    use: ./extension/example.js
+    config:
+      my_url: /example
+      enabled: true
+      tags:
+        - alpha
+        - beta
+  example-package:
+    use: ./plugins/example-package
+    config:
+      retries: 3
+      metadata:
+        owner: octocat
+      nullable: null
+`,
+    "/tmp/configs/test.yml"
+  );
+
+  assert.deepEqual(parsed.extensions, [
+    {
+      id: "example-file",
+      use: "/tmp/configs/extension/example.js",
+      config: {
+        my_url: "/example",
+        enabled: true,
+        tags: ["alpha", "beta"]
+      }
+    },
+    {
+      id: "example-package",
+      use: "/tmp/configs/plugins/example-package",
+      config: {
+        retries: 3,
+        metadata: {
+          owner: "octocat"
+        },
+        nullable: null
+      }
+    }
+  ]);
+});
+
+test("parseServiceConfig accepts an extensions mapping without config values", () => {
+  const parsed = parseServiceConfig(
+    `${validConfig}
+extensions:
+  example-file:
+    use: ./extension/example.js
+`,
+    "/tmp/configs/test.yml"
+  );
+
+  assert.deepEqual(parsed.extensions, [
+    {
+      id: "example-file",
+      use: "/tmp/configs/extension/example.js",
+      config: undefined
+    }
+  ]);
 });
 
 test("parseServiceConfig accepts an explicit logging level", () => {
@@ -317,6 +384,45 @@ test("parseServiceConfig rejects unsupported logging levels", () => {
   assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
     assert.ok(error instanceof ConfigError);
     assert.match(error.message, /logging\.level: Expected one of: debug, info, warn, error\./);
+    return true;
+  });
+});
+
+test("parseServiceConfig rejects invalid extensions mappings", () => {
+  const invalid = `${validConfig}\nextensions: []`;
+
+  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /extensions: Expected a mapping\./);
+    return true;
+  });
+});
+
+test("parseServiceConfig rejects extension entries without use", () => {
+  const invalid = `${validConfig}
+extensions:
+  example-file:
+    config:
+      my_url: /example
+`;
+
+  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /extensions\.example-file\.use: Missing required field\./);
+    return true;
+  });
+});
+
+test("parseServiceConfig rejects blank extension use paths", () => {
+  const invalid = `${validConfig}
+extensions:
+  example-file:
+    use: "   "
+`;
+
+  assert.throws(() => parseServiceConfig(invalid, "/tmp/configs/test.yml"), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /extensions\.example-file\.use: Expected a non-empty string\./);
     return true;
   });
 });

@@ -4,8 +4,9 @@ The current starter scope for Coding Automator is a provider-extensible ingress 
 
 ## Goals
 
-- Load a single YAML config file containing shared app config plus arbitrary provider-owned top-level sections such as `gh`, `gitlab`, and `chat-bot`.
+- Load a single YAML config file containing shared app config, an ordered local `extensions` mapping, and arbitrary provider-owned top-level sections such as `gh`, `gitlab`, and `chat-bot`.
 - Route incoming HTTP requests to registered providers by provider-owned URL paths.
+- Let local extension modules register providers and app services through the existing builder contract without changing core startup wiring.
 - Let provider handlers parse requests, validate provider-specific policy, submit one or more candidate triggers, and write the HTTP response.
 - Normalize provider input into provider-defined `in` objects plus optional per-run environment variables.
 - Evaluate workflows in declaration order and run only the first matching workflow.
@@ -25,8 +26,9 @@ The current starter scope for Coding Automator is a provider-extensible ingress 
 - No multi-workflow fan-out for a single request. First match only.
 - No auto-created workspace when the selected executor resolves to workspace allocation disabled.
 - No system-wide provider schema registry in the core config loader. Providers own validation for their top-level config sections.
+- No remote extension downloads, registry package-name resolution, or extension sandboxing in the starter scope.
 - No required trigger prefix convention in code. Providers may share or prefix trigger names by documentation and team policy.
-- No shipped GitLab or chat-bot provider implementation yet. Extra provider config sections are preserved, but startup currently registers only GitHub.
+- No shipped GitLab or chat-bot provider implementation yet. Extra provider config sections are preserved, while local extensions can register additional providers and app services.
 
 ## Workflow Contract
 
