@@ -14,6 +14,10 @@ export async function startGitHubRedeliveryService(
   app: Parameters<AppServiceHandler>[0],
   createWorker: (options: GitHubRedeliveryWorkerOptions) => GitHubRedeliveryWorker
 ): Promise<void> {
+  if (!app.config.gh) {
+    return;
+  }
+
   const github = resolveGitHubProviderConfig(app.config.gh);
   const redelivery = github.redelivery;
 

@@ -109,6 +109,7 @@ workflow:
 - `workflow`: ordered workflow definitions keyed by workflow name.
 - Any other top-level key is provider-owned configuration. The core app preserves those sections and registered providers validate them at startup.
 - The shipped startup wiring keeps GitHub explicit in `src/app/main.ts`, then loads configured local extensions in order.
+- `gh` is optional. Omitting it disables the built-in GitHub provider and built-in GitHub redelivery service.
 - `gh.requireMention` is optional and defaults to `true`. Set it to `false` to allow issue comments and slash commands on issues without a leading bot mention.
 - `gh.ignoreApprovalReview` is optional and defaults to `true`. When enabled, approved `pull_request_review` events are ignored instead of emitting `pr:review`.
 - Inline `pull_request_review_comment` deliveries with `comment.pull_request_review_id` are ignored by the GitHub provider, so only standalone PR review comments emit `pr:comment` or `pr:at`.
@@ -209,7 +210,8 @@ workflow:
 ## Runtime Startup
 
 - The service starts with `npm start -- --config /path/to/service.yml`.
-- The shipped GitHub provider validates `gh.*` and requires `GITHUB_WEBHOOK_SECRET` plus `GITHUB_APP_PRIVATE_KEY_PATH` during startup.
+- When `gh` is configured, the shipped GitHub provider validates `gh.*` and requires `GITHUB_WEBHOOK_SECRET` plus `GITHUB_APP_PRIVATE_KEY_PATH` during startup.
 - `src/app/main.ts` keeps the built-in GitHub provider and redelivery service registration explicit, then loads configured local extensions before `listen()`.
+- When `gh` is omitted, startup skips built-in GitHub route registration, skips built-in GitHub redelivery registration, and does not require GitHub-specific runtime environment variables.
 - When `gh.redelivery` is enabled, the GitHub provider registers a background app service that uses the built-in app scheduler, waits one configured interval before its first scan, then scans the last 3 days of app webhook deliveries, retries unresolved failures once per delivery GUID, and persists its checkpoint beside the tracked run artifacts.
 - App shutdown cancels pending app-managed scheduled waits, logs any tracked app jobs it is waiting on, logs a settle marker for each tracked job as it completes during shutdown, and still leaves detached workflow draining to the separate CLI `workflowTracker` boundary.

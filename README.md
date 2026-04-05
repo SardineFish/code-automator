@@ -6,12 +6,12 @@ It receives GitHub webhooks, matches them against ordered workflows in YAML, lau
 
 This repository is run with Coding Automator itself, so the project is dogfooding the issue-to-PR workflow it documents.
 
-The runtime is event-provider extensible. Today the shipped provider is the GitHub App provider under `gh`, and the shared workflow engine is designed so future event sources can plug into the same routing, execution, and tracking model.
+The runtime is event-provider extensible. Today the shipped provider is the GitHub App provider under `gh`, and the shared workflow engine is designed so future event sources can plug into the same routing, execution, and tracking model. Omitting `gh` disables the built-in GitHub provider and redelivery service so extension-only deployments can boot without GitHub-specific environment variables.
 
 ## What You Need
 
 - Node.js 22 or newer
-- A GitHub App installed on the repositories you want to automate
+- A GitHub App installed on the repositories you want to automate if you enable the built-in `gh` provider
 - A public webhook URL that GitHub can reach
 - One or more coding agent CLIs available on the host, such as `codex` or `claude`
 - For agents that support installable skills or plugins, a GitHub manipulation skill is strongly recommended so the agent can inspect issues, push branches, and open pull requests more reliably
@@ -30,9 +30,10 @@ The runtime is event-provider extensible. Today the shipped provider is the GitH
 ## Quick Start
 
 1. Install dependencies.
-2. Create `.env` with:
+2. If `service.yml` enables the built-in `gh` provider, create `.env` with:
    - `GITHUB_WEBHOOK_SECRET=...`
    - `GITHUB_APP_PRIVATE_KEY_PATH=/absolute/path/to/app.pem`
+   If `gh` is omitted and you use only local extensions, those GitHub-specific environment variables are not required.
 3. Create `service.yml`.
 4. Start the service with an explicit config path.
 
@@ -84,7 +85,7 @@ This is the simplest end-to-end setup:
 - each run gets a fresh non-keyed workspace under `workspace.baseDir`
 - no reusable session state is kept between runs
 
-Relative `tracking` paths and workspace base directories resolve from the YAML file location. The config loader preserves provider-owned top-level sections such as `gh`, and the shipped startup wiring keeps GitHub explicit while also loading any configured local extensions.
+Relative `tracking` paths and workspace base directories resolve from the YAML file location. The config loader preserves provider-owned top-level sections such as `gh`, and the shipped startup wiring keeps GitHub explicit while also loading any configured local extensions. When `gh` is omitted, the built-in GitHub route and redelivery service are not registered.
 
 ## Provider Keys
 
