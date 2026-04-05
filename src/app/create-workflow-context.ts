@@ -24,6 +24,7 @@ export function createWorkflowContext(
 
   return {
     config,
+    extensionConfig: undefined,
     env: runtime.baseEnv,
     log,
     trigger(name, payload) {

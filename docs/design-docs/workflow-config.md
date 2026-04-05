@@ -138,6 +138,7 @@ workflow:
 - Each extension must export one object with an `API_VERSION` that matches the runtime-supported extension API version, plus `init(builder, context)`.
 - `builder` exposes the same `provider()` and `service()` registration seam used by built-ins.
 - `context` exposes `id`, extension-owned `config`, `configDir`, `env`, and an extension-scoped `log`.
+- Runtime provider handlers receive `workflow.extensionConfig`, and runtime app services receive `app.extensionConfig`, so extension-owned config stays available after `init()`.
 - Extension startup is local-only and high-trust. The runtime does not sandbox extension code or download remote modules.
 
 ## Matching Rules

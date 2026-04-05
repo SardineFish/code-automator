@@ -77,6 +77,72 @@ test("App loads registered extensions during listen", async (t) => {
   await started.shutdown();
 });
 
+test("App binds extension config into provider and service runtime contexts", async (t) => {
+  const dir = createTempDir(t, "gao-app-extension-runtime-config-");
+  const extensionPath = path.join(dir, "runtime-config-extension.js");
+  const app = App(createAppConfig(), createRuntimeOptions()).extension("runtime-config", extensionPath, {
+    routePath: "/runtime-config-hook",
+    message: "hello from runtime config"
+  });
+
+  writeFileSync(
+    extensionPath,
+    `let serviceConfig;
+let serviceWorkflowConfig;
+
+export default {
+  API_VERSION: 1,
+  async init(builder, context) {
+    builder.service(async (app) => {
+      serviceConfig = app.extensionConfig;
+      serviceWorkflowConfig = app.createWorkflow("/service-workflow").extensionConfig;
+    });
+
+    builder.provider(context.config.routePath, async (workflow, _request, response) => {
+      response.statusCode = 200;
+      response.setHeader("content-type", "application/json; charset=utf-8");
+      response.end(JSON.stringify({
+        providerConfig: workflow.extensionConfig,
+        serviceConfig,
+        serviceWorkflowConfig,
+        appConfigDir: workflow.config.configDir
+      }));
+    });
+  }
+};
+`
+  );
+
+  const started = await app.listen();
+  const address = started.server.address();
+
+  if (!address || typeof address === "string") {
+    throw new Error("Unexpected test server address.");
+  }
+
+  const result = await fetch(`http://127.0.0.1:${address.port}/runtime-config-hook`, {
+    method: "POST"
+  });
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(await result.json(), {
+    providerConfig: {
+      routePath: "/runtime-config-hook",
+      message: "hello from runtime config"
+    },
+    serviceConfig: {
+      routePath: "/runtime-config-hook",
+      message: "hello from runtime config"
+    },
+    serviceWorkflowConfig: {
+      routePath: "/runtime-config-hook",
+      message: "hello from runtime config"
+    },
+    appConfigDir: createAppConfig().configDir
+  });
+  await started.shutdown();
+});
+
 test("App starts registered services and runs their shutdown handlers", async () => {
   const events: string[] = [];
   const app = await App(createAppConfig(), createRuntimeOptions())

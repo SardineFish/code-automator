@@ -46,6 +46,7 @@ export function createAppContext(options: CreateAppContextOptions): ManagedAppCo
   return {
     appContext: {
       config: options.config,
+      extensionConfig: undefined,
       env: options.runtime.baseEnv,
       log: appLog,
       createWorkflow(source) {

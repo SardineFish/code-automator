@@ -1,5 +1,6 @@
 import type { AppExtensionDefinition, AppExtensionBuilder } from "../types/extensions.js";
 import type { LogSink } from "../types/logging.js";
+import { createExtensionBuilder } from "./bind-extension-context.js";
 import { loadAppExtensionModule } from "./load-app-extension-module.js";
 
 export async function loadConfiguredExtensions(
@@ -11,12 +12,16 @@ export async function loadConfiguredExtensions(
 ): Promise<void> {
   for (const extension of extensions) {
     const extensionLog = logSink.child({ source: "extension", extensionId: extension.id });
+    const extensionConfigRef = {
+      current: extension.config
+    };
+    const extensionBuilder = createExtensionBuilder(builder, () => extensionConfigRef.current);
     const module = await loadAppExtensionModule(extension);
 
     try {
-      await module.init(builder, {
+      await module.init(extensionBuilder, {
         id: extension.id,
-        config: extension.config,
+        config: extensionConfigRef.current,
         configDir,
         env,
         log: extensionLog

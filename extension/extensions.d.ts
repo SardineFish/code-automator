@@ -57,8 +57,9 @@ export interface OrchestrationResult {
   errorMessage?: string;
 }
 
-export interface WorkflowContext {
+export interface WorkflowContext<TExtensionConfig = unknown> {
   config: Record<string, unknown> & { configDir: string };
+  extensionConfig: TExtensionConfig;
   env: NodeJS.ProcessEnv;
   log: LogSink;
   trigger(name: string, payload: TriggerSubmissionInput): void;
@@ -69,16 +70,21 @@ export interface WorkflowContext {
   submit(): Promise<OrchestrationResult>;
 }
 
-export type ProviderHandler<TArgs extends unknown[] = unknown[], TResult = unknown> = (
-  ctx: WorkflowContext,
+export type ProviderHandler<
+  TArgs extends unknown[] = unknown[],
+  TResult = unknown,
+  TExtensionConfig = unknown
+> = (
+  ctx: WorkflowContext<TExtensionConfig>,
   ...args: TArgs
 ) => Promise<TResult>;
 
-export interface AppContext {
+export interface AppContext<TExtensionConfig = unknown> {
   config: Record<string, unknown> & { configDir: string };
+  extensionConfig: TExtensionConfig;
   env: NodeJS.ProcessEnv;
   log: LogSink;
-  createWorkflow(source: string): WorkflowContext;
+  createWorkflow(source: string): WorkflowContext<TExtensionConfig>;
   getProvider<T extends ProviderHandler<any[], unknown>>(key: string): T;
   trackJob<TResult>(debugName: string, job: Promise<TResult>): Promise<TResult>;
   scheduleInterval(
@@ -98,7 +104,9 @@ export interface AppContext {
   on(eventName: "shutdown", handler: () => Promise<void>): () => void;
 }
 
-export type AppServiceHandler = (app: AppContext) => Promise<void>;
+export type AppServiceHandler<TExtensionConfig = unknown> = (
+  app: AppContext<TExtensionConfig>
+) => Promise<void>;
 
 export interface AppExtensionContext<TConfig = unknown> {
   id: string;
@@ -108,15 +116,15 @@ export interface AppExtensionContext<TConfig = unknown> {
   log: LogSink;
 }
 
-export interface AppExtensionBuilder {
+export interface AppExtensionBuilder<TConfig = unknown> {
   provider<TArgs extends unknown[] = unknown[], TResult = unknown>(
     key: string,
-    handler: ProviderHandler<TArgs, TResult>
-  ): AppExtensionBuilder;
-  service(handler: AppServiceHandler): AppExtensionBuilder;
+    handler: ProviderHandler<TArgs, TResult, TConfig>
+  ): AppExtensionBuilder<TConfig>;
+  service(handler: AppServiceHandler<TConfig>): AppExtensionBuilder<TConfig>;
 }
 
 export interface AppExtensionModule<TConfig = unknown> {
   API_VERSION: typeof APP_EXTENSION_API_VERSION;
-  init(builder: AppExtensionBuilder, context: AppExtensionContext<TConfig>): void | Promise<void>;
+  init(builder: AppExtensionBuilder<TConfig>, context: AppExtensionContext<TConfig>): void | Promise<void>;
 }
