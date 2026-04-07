@@ -1,4 +1,9 @@
 import type { WorkflowTracker } from "../service/tracking/workflow-tracker.js";
+import {
+  waitForActiveRunsToDrain,
+  WAITING_FOR_WORKFLOW_RUN_DURING_SHUTDOWN_PREFIX,
+  WORKFLOW_RUN_SETTLED_DURING_SHUTDOWN_PREFIX
+} from "./cli-shutdown-workflow-runs.js";
 import type { AppLifecycle } from "./app.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 250;
@@ -6,6 +11,7 @@ const DEFAULT_POLL_INTERVAL_MS = 250;
 export const SIGINT_DRAIN_MESSAGE =
   "SIGINT received, draining active workflows. Press Ctrl-C again to exit immediately.";
 export const FORCED_SIGINT_EXIT_CODE = 130;
+export { WAITING_FOR_WORKFLOW_RUN_DURING_SHUTDOWN_PREFIX, WORKFLOW_RUN_SETTLED_DURING_SHUTDOWN_PREFIX };
 
 export type CliShutdownState = "running" | "draining" | "forced";
 
@@ -17,7 +23,7 @@ export interface CliShutdownCoordinator {
 
 export interface CliShutdownCoordinatorOptions {
   app: AppLifecycle;
-  workflowTracker: Pick<WorkflowTracker, "getActiveRunCount">;
+  workflowTracker: Pick<WorkflowTracker, "getActiveRuns">;
   exit?: (code: number) => void;
   pollIntervalMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -90,16 +96,6 @@ export function createCliShutdownCoordinator(
 
   async function drainGracefully(): Promise<void> {
     await options.app.shutdown();
-    await waitForActiveRunsToDrain(options.workflowTracker, pollIntervalMs, sleep);
-  }
-}
-
-async function waitForActiveRunsToDrain(
-  workflowTracker: Pick<WorkflowTracker, "getActiveRunCount">,
-  pollIntervalMs: number,
-  sleep: (ms: number) => Promise<void>
-): Promise<void> {
-  while ((await workflowTracker.getActiveRunCount()) > 0) {
-    await sleep(pollIntervalMs);
+    await waitForActiveRunsToDrain(options.workflowTracker, pollIntervalMs, sleep, writeLine);
   }
 }

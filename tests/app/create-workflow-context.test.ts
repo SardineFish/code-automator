@@ -129,6 +129,9 @@ function createRuntime(
       async getLaunchableQueuedRuns() {
         return [];
       },
+      async getActiveRuns() {
+        return [];
+      },
       subscribeTerminalEvents(runId, listeners) {
         subscriptions.push({
           runId,

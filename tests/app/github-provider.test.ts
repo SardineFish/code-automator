@@ -853,6 +853,9 @@ async function startGitHubApp(
       async getLaunchableQueuedRuns() {
         return [];
       },
+      async getActiveRuns() {
+        return [];
+      },
       subscribeTerminalEvents(runId, listeners) {
         terminalListeners.set(runId, {
           completed: [...listeners.completed],

@@ -321,6 +321,9 @@ function createRuntimeOptions() {
       async getLaunchableQueuedRuns() {
         return [];
       },
+      async getActiveRuns() {
+        return [];
+      },
       subscribeTerminalEvents() {
         return () => undefined;
       },
