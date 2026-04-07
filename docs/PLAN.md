@@ -251,6 +251,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Bind extension-owned config at the extension registration seam so registered providers and services receive extension-scoped runtime wrappers, and workflows created by extension services inherit the same config.
 - Update focused runtime and type coverage plus the standalone extension contract, example, and operator docs so the new extension-config access path stays documented and locked in.
 
+### Plan 39: Named workflow shutdown blocker reporting [done]
+
+- Expose active workflow run snapshots from the tracker so graceful shutdown can report concrete blockers without changing persisted tracking state.
+- Update CLI shutdown draining to print named detached workflow blockers, log settle progress as runs disappear, and avoid duplicate waiting lines when the active set is unchanged.
+- Add focused tracker and CLI coverage plus operator docs for the named shutdown blocker behavior.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.

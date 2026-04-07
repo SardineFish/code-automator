@@ -105,6 +105,9 @@ test("processTriggerSubmission launches the first matching workflow with matched
       async getLaunchableQueuedRuns() {
         return [];
       },
+      async getActiveRuns() {
+        return [];
+      },
       subscribeTerminalEvents(runId, listeners) {
         subscribedRuns.push(runId);
         subscribedListenerCounts.push(`${listeners.completed.length}:${listeners.error.length}`);
@@ -195,6 +198,9 @@ test("processTriggerSubmission ignores empty trigger submissions", async () => {
       async getLaunchableQueuedRuns() {
         return [];
       },
+      async getActiveRuns() {
+        return [];
+      },
       subscribeTerminalEvents() {
         throw new Error("should not run");
       },
@@ -278,6 +284,9 @@ test("processTriggerSubmission prepares an executor-specific workspace before la
         };
       },
       async getLaunchableQueuedRuns() {
+        return [];
+      },
+      async getActiveRuns() {
         return [];
       },
       subscribeTerminalEvents() {
@@ -376,6 +385,9 @@ test("processTriggerSubmission renders workspace keys and leaves blocked keyed r
         };
       },
       async getLaunchableQueuedRuns() {
+        return [];
+      },
+      async getActiveRuns() {
         return [];
       },
       subscribeTerminalEvents() {

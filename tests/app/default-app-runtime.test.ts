@@ -160,6 +160,9 @@ test("initializeWorkflowTracking cleanup stops future reconcile intervals", asyn
       async getLaunchableQueuedRuns() {
         return [];
       },
+      async getActiveRuns() {
+        return [];
+      },
       subscribeTerminalEvents() {
         return () => undefined;
       },

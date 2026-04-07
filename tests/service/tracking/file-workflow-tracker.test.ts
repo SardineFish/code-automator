@@ -74,6 +74,58 @@ test("fileWorkflowTracker persists running runs and appends terminal results", a
   assert.equal(logLines[0].installationId, 42);
 });
 
+test("fileWorkflowTracker returns copied active run snapshots for shutdown reporting", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "gao-tracker-active-runs-"));
+  const tracker = createFileWorkflowTracker(
+    {
+      stateFile: path.join(dir, "state.json"),
+      logFile: path.join(dir, "runs.jsonl")
+    },
+    fileWorkflowTrackerRepo,
+    createNoOpLogSink()
+  );
+
+  await tracker.initialize();
+  const first = await createQueuedRun(tracker, "delivery-1");
+  const second = await createQueuedRun(tracker, "delivery-2");
+  const snapshot = await tracker.getActiveRuns();
+
+  assert.deepEqual(
+    snapshot.map((run) => ({
+      runId: run.runId,
+      workflowName: run.workflowName,
+      executorName: run.executorName,
+      repoFullName: run.repoFullName,
+      status: run.status
+    })),
+    [
+      {
+        runId: first.runId,
+        workflowName: "issue-plan",
+        executorName: "codex",
+        repoFullName: "acme/demo",
+        status: "queued"
+      },
+      {
+        runId: second.runId,
+        workflowName: "issue-plan",
+        executorName: "codex",
+        repoFullName: "acme/demo",
+        status: "queued"
+      }
+    ]
+  );
+
+  snapshot[0]!.workflowName = "changed";
+  snapshot[0]!.artifacts.runDir = "/tmp/changed";
+  snapshot.pop();
+
+  const nextSnapshot = await tracker.getActiveRuns();
+  assert.deepEqual(nextSnapshot.map((run) => run.runId), [first.runId, second.runId]);
+  assert.equal(nextSnapshot[0]?.workflowName, "issue-plan");
+  assert.equal(nextSnapshot[0]?.artifacts.runDir, first.artifacts.runDir);
+});
+
 test("fileWorkflowTracker reconciles active runs from result files and missing pids", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "gao-reconcile-"));
   const tracker = createFileWorkflowTracker(

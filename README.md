@@ -316,7 +316,7 @@ gh:
     maxPerRun: 20
 ```
 
-The redelivery service stores its checkpoint next to the tracked run artifacts under `tracking.stateFile`, and app shutdown now cancels pending scheduled waits, logs any in-flight app-managed jobs it is waiting on, and logs a settle marker for each one as it completes.
+The redelivery service stores its checkpoint next to the tracked run artifacts under `tracking.stateFile`, and app shutdown now cancels pending scheduled waits, logs any in-flight app-managed jobs it is waiting on, and logs a settle marker for each one as it completes. During CLI shutdown drain, detached workflow runs are also printed by name and log a settle line as they leave the active set.
 
 ## Configuration Notes
 
@@ -357,7 +357,7 @@ The redelivery service stores its checkpoint next to the tracked run artifacts u
 - Per-run wrapper, PID, result, stdout, and stderr files are stored next to the state file under a derived run-artifacts directory.
 - Keyed queued runs persist enough launch state to survive restart, and the next queued keyed run is released when the current owner reaches a terminal state.
 - `workspace.cleanupAfterRun` only removes ephemeral per-run workspaces. Reusable keyed workspaces are removed by reset or close workflows.
-- Press `Ctrl-C` once to stop accepting new HTTP requests, cancel pending app-managed scheduled waits such as GitHub redelivery, log any in-flight app-managed jobs still being awaited, log a done marker as each one settles, and then wait for tracked `queued` or `running` workflows to drain before exiting `0`. Press `Ctrl-C` again to exit immediately.
+- Press `Ctrl-C` once to stop accepting new HTTP requests, cancel pending app-managed scheduled waits such as GitHub redelivery, log any in-flight app-managed jobs still being awaited, log a done marker as each one settles, print the detached workflow runs it is still waiting on by name, log a settle line as each tracked workflow run disappears from the active set, and then exit `0` once tracked `queued` or `running` workflows have drained. Press `Ctrl-C` again to exit immediately.
 - If `gh.redelivery` is enabled, the GitHub provider registers a background app service that schedules recent GitHub App delivery scans through the built-in app scheduler and requests redelivery for unresolved failures.
 - `logging.level: debug` adds inbound request metadata and clipped executor command and stdout previews to runtime logs.
 - Executors are command templates only; containerization, sandboxing, and repo checkout strategy stay operator-defined.

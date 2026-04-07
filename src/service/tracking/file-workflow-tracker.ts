@@ -65,6 +65,9 @@ export function createFileWorkflowTracker(
         Object.values(state.activeRuns).filter((record) => isLaunchableQueuedRun(record))
       );
     },
+    async getActiveRuns() {
+      return withLock(async () => Object.values(state.activeRuns).map(cloneActiveRunRecord).sort(compareActiveRuns));
+    },
     subscribeTerminalEvents(runId, listeners) {
       const nextListeners = cloneTerminalListeners(listeners);
       if (!hasTerminalListeners(nextListeners)) {
@@ -320,4 +323,21 @@ function removeListenerEntries<T>(
   }
 
   return remaining;
+}
+
+function cloneActiveRunRecord(record: ActiveWorkflowRunRecord): ActiveWorkflowRunRecord {
+  return {
+    ...record,
+    artifacts: { ...record.artifacts },
+    launch: record.launch
+      ? {
+          ...record.launch,
+          triggerEnv: { ...record.launch.triggerEnv }
+        }
+      : undefined
+  };
+}
+
+function compareActiveRuns(left: ActiveWorkflowRunRecord, right: ActiveWorkflowRunRecord): number {
+  return left.createdAt.localeCompare(right.createdAt) || left.runId.localeCompare(right.runId);
 }

@@ -501,6 +501,9 @@ function createRuntime(
       async getLaunchableQueuedRuns() {
         return [];
       },
+      async getActiveRuns() {
+        return [];
+      },
       subscribeTerminalEvents(_runId: string, _listeners: WorkflowContextTerminalListeners) {
         return () => undefined;
       },
