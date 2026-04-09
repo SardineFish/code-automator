@@ -120,18 +120,30 @@ test("GitHub provider routes plain issue comments when requireMention is false",
   ]);
 });
 
-test("GitHub provider treats unsupported slash issue commands as generic mentions", async (t) => {
-  const { commands, commentCalls, reactionCalls, started, url } = await startGitHubApp(t);
+test("GitHub provider routes custom issue commands to matching workflows", async (t) => {
+  const { commands, commentCalls, reactionCalls, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      config.workflow = [
+        {
+          name: "issue-custom-command",
+          on: ["issue:command:ship.release:stable_1"],
+          use: "codex",
+          prompt: "Run ${in.command} for issue ${in.issueId}"
+        },
+        ...config.workflow
+      ];
+    }
+  });
   const response = await signedRequest(
     url,
-    issueCommentPayload("@github-agent-orchestrator /go"),
+    issueCommentPayload("@github-agent-orchestrator /Ship.Release:Stable_1"),
     "issue_comment"
   );
 
   assert.equal(response.status, 202);
   await waitForCondition(() => started.length === 1);
-  assert.deepEqual(commands, ["codex exec 'Handle /go'"]);
-  assert.deepEqual(started, ["codex exec 'Handle /go'"]);
+  assert.deepEqual(commands, ["codex exec 'Run ship.release:stable_1 for issue 7'"]);
+  assert.deepEqual(started, ["codex exec 'Run ship.release:stable_1 for issue 7'"]);
   assert.deepEqual(commentCalls, []);
   assert.deepEqual(reactionCalls, [
     "POST https://api.github.com/repos/acme/demo/issues/comments/99/reactions eyes"
@@ -168,6 +180,47 @@ test("GitHub provider accepts bare slash issue commands when requireMention is f
   await waitForCondition(() => started.length === 1);
   assert.deepEqual(commands, ["codex exec 'Plan issue 7'"]);
   assert.deepEqual(started, ["codex exec 'Plan issue 7'"]);
+});
+
+test("GitHub provider accepts bare custom issue commands when requireMention is false", async (t) => {
+  const { commands, started, url } = await startGitHubApp(t, {
+    customizeConfig(config) {
+      if (!config.gh) {
+        throw new Error("Missing test GitHub config.");
+      }
+
+      config.gh.requireMention = false;
+      config.workflow = [
+        {
+          name: "issue-custom-command",
+          on: ["issue:command:ship.release:stable_1"],
+          use: "codex",
+          prompt: "Run ${in.command} for issue ${in.issueId}"
+        },
+        ...config.workflow
+      ];
+    }
+  });
+  const response = await signedRequest(url, issueCommentPayload("  /Ship.Release:Stable_1  "), "issue_comment");
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Run ship.release:stable_1 for issue 7'"]);
+  assert.deepEqual(started, ["codex exec 'Run ship.release:stable_1 for issue 7'"]);
+});
+
+test("GitHub provider treats non-leading slash issue text as a generic mention", async (t) => {
+  const { commands, started, url } = await startGitHubApp(t);
+  const response = await signedRequest(
+    url,
+    issueCommentPayload("@github-agent-orchestrator please /ship.release:stable_1"),
+    "issue_comment"
+  );
+
+  assert.equal(response.status, 202);
+  await waitForCondition(() => started.length === 1);
+  assert.deepEqual(commands, ["codex exec 'Handle please /ship.release:stable_1'"]);
+  assert.deepEqual(started, ["codex exec 'Handle please /ship.release:stable_1'"]);
 });
 
 test("GitHub provider routes /reset as an issue command while the issue is open", async (t) => {

@@ -110,7 +110,7 @@ workflow:
 - Any other top-level key is provider-owned configuration. The core app preserves those sections and registered providers validate them at startup.
 - The shipped startup wiring keeps GitHub explicit in `src/app/main.ts`, then loads configured local extensions in order.
 - `gh` is optional. Omitting it disables the built-in GitHub provider and built-in GitHub redelivery service.
-- `gh.requireMention` is optional and defaults to `true`. Set it to `false` to allow issue comments and slash commands on issues without a leading bot mention.
+- `gh.requireMention` is optional and defaults to `true`. With the default setting, issue slash commands must start with `@<bot-handle> /<command>` after optional leading whitespace. Command names normalize to lowercase `issue:command:<name>` triggers and may contain letters, digits, `-`, `.`, `:`, and `_`. Set it to `false` to allow bare leading slash commands on issues without a leading bot mention.
 - `gh.ignoreApprovalReview` is optional and defaults to `true`. When enabled, approved `pull_request_review` events are ignored instead of emitting `pr:review`.
 - Inline `pull_request_review_comment` deliveries with `comment.pull_request_review_id` are ignored by the GitHub provider, so only standalone PR review comments emit `pr:comment` or `pr:at`.
 - `gh.redelivery` is optional. Use `false` or omit it to disable background webhook redelivery polling.

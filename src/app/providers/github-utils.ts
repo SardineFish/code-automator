@@ -7,7 +7,7 @@ import { RequestBodyError, readRequestBody } from "../../runtime/http/read-reque
 import type { WebhookGateContext } from "../../types/runtime.js";
 import type { GitHubReview } from "../../types/workflow-input.js";
 
-const SUPPORTED_COMMANDS = new Set(["plan", "approve", "reset"]);
+const ISSUE_COMMAND_PATTERN = /^\/([a-z0-9](?:[a-z0-9._:-]*[a-z0-9])?)(?=$|\s)/i;
 const installationTokenProviders = new Map<string, InstallationTokenProvider>();
 const appJwtProviders = new Map<string, GitHubAppJwtProvider>();
 
@@ -65,7 +65,7 @@ export function parseIssueMention(
 
   return {
     ...mention,
-    command: readSupportedSlashCommand(commandSource)
+    command: readIssueSlashCommand(commandSource)
   };
 }
 
@@ -512,18 +512,17 @@ function readLeadingMentionContent(bodyText: string, botHandle: string): string 
   return (mentionMatch[1] ?? "").trim();
 }
 
-function readSupportedSlashCommand(value: string | undefined): string | undefined {
+function readIssueSlashCommand(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
   }
 
-  const commandMatch = value.match(/^\/([a-z0-9-]+)\b/i);
+  const commandMatch = value.match(ISSUE_COMMAND_PATTERN);
   if (!commandMatch) {
     return undefined;
   }
 
-  const commandName = commandMatch[1].toLowerCase();
-  return SUPPORTED_COMMANDS.has(commandName) ? commandName : undefined;
+  return commandMatch[1].toLowerCase();
 }
 
 function getReactionEndpoint(

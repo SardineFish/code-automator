@@ -34,10 +34,10 @@ test("readGitHubProviderEvent accepts issue openings with reaction and thread ta
   });
 });
 
-test("readGitHubProviderEvent accepts issue comments and preserves mention parsing", () => {
+test("readGitHubProviderEvent accepts custom issue commands and preserves mention parsing", () => {
   const result = readGitHubProviderEvent(
     "issue_comment",
-    issueCommentPayload("@github-agent-orchestrator /approve"),
+    issueCommentPayload("@github-agent-orchestrator /Ship.Release:Stable_1"),
     createGitHubConfig()
   );
 
@@ -52,10 +52,10 @@ test("readGitHubProviderEvent accepts issue comments and preserves mention parsi
   }
 
   assert.equal(result.event.issueId, "7");
-  assert.equal(result.event.body, "@github-agent-orchestrator /approve");
+  assert.equal(result.event.body, "@github-agent-orchestrator /Ship.Release:Stable_1");
   assert.equal(result.event.mention.hasMention, true);
-  assert.equal(result.event.mention.command, "approve");
-  assert.equal(result.event.mention.content, "/approve");
+  assert.equal(result.event.mention.command, "ship.release:stable_1");
+  assert.equal(result.event.mention.content, "/Ship.Release:Stable_1");
   assert.deepEqual(result.event.reactionTarget, { subjectId: 99, kind: "issue_comment" });
   assert.deepEqual(result.event.threadTarget, { number: 7, kind: "issue" });
 });
@@ -100,6 +100,34 @@ test("readGitHubProviderEvent accepts plain issue comments when requireMention i
   assert.equal(result.event.mention.hasMention, false);
   assert.equal(result.event.mention.command, undefined);
   assert.equal(result.event.mention.content, "please plan this");
+});
+
+test("readGitHubProviderEvent accepts bare custom issue commands when requireMention is false", () => {
+  const result = readGitHubProviderEvent(
+    "issue_comment",
+    issueCommentPayload("  /Ship.Release:Stable_1  "),
+    createGitHubConfig((config) => {
+      if (!config.gh) {
+        throw new Error("Missing test GitHub config.");
+      }
+
+      config.gh.requireMention = false;
+    })
+  );
+
+  assert.equal(result.status, "accepted");
+  if (result.status !== "accepted") {
+    return;
+  }
+
+  assert.equal(result.event.kind, "issue_comment");
+  if (result.event.kind !== "issue_comment") {
+    return;
+  }
+
+  assert.equal(result.event.mention.hasMention, false);
+  assert.equal(result.event.mention.command, "ship.release:stable_1");
+  assert.equal(result.event.mention.content, "/Ship.Release:Stable_1");
 });
 
 test("readGitHubProviderEvent accepts PR comments from issue-comment and review-comment payloads", () => {

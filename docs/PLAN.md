@@ -251,6 +251,12 @@ This file defines the implementation order for the whole Coding Automator projec
 - Bind extension-owned config at the extension registration seam so registered providers and services receive extension-scoped runtime wrappers, and workflows created by extension services inherit the same config.
 - Update focused runtime and type coverage plus the standalone extension contract, example, and operator docs so the new extension-config access path stays documented and locked in.
 
+### Plan 39: Free GitHub issue slash commands [done]
+
+- Replace the fixed GitHub issue slash-command list with leading command parsing that normalizes arbitrary issue commands into `issue:command:<name>`.
+- Keep mention gating and first-match-wins workflow submission unchanged while extending regression coverage for custom commands, lowercase normalization, and non-command fallbacks.
+- Update operator docs to document the allowed command characters `-`, `.`, `:`, and `_` plus the exact leading-command matching rules.
+
 ## Definition Of Done For Each Plan
 
 - Code follows the declared architecture layers.
