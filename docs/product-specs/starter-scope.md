@@ -65,7 +65,7 @@ The GitHub generic issue mention workflow should render a prompt shaped like:
 Check issue ${in.issueId}. Handle the user's request: ${in.content}. Do not write any code.
 ```
 
-By default, the GitHub provider normalizes `@<bot-handle> /plan` and `@<bot-handle> /approve` to issue command triggers. When `gh.requireMention` is `false`, `/plan` and `/approve` on issues also normalize without a leading mention.
+By default, the GitHub provider normalizes leading issue comments shaped like `@<bot-handle> /<command>` to `issue:command:<command>`. Command names are lowercased and may contain letters, digits, `-`, `.`, `:`, and `_`. When `gh.requireMention` is `false`, bare leading `/command` issue comments also normalize without a leading mention.
 
 The GitHub provider emits `issue:at` and `pr:at` whenever `@<bot-handle>` appears anywhere in an issue or PR comment body.
 

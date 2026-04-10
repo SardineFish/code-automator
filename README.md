@@ -183,6 +183,8 @@ After this is configured, a typical GitHub flow looks like this:
 4. Continue the PR loop.
    Later PR comments and PR reviews trigger `pr-review`, so the agent can react to review feedback and update the pull request.
 
+Issue comments that start with `@<BotName> /<command>` normalize to `issue:command:<command>`. Command names are lowercased and may contain letters, digits, `-`, `.`, `:`, and `_`. If `gh.requireMention` is `false`, the same leading slash command format also works without the bot mention on issues.
+
 If GitHub resolves a linked issue for that pull request, PR workflows also receive `in.issueId`. That lets keyed workspace setups such as `${in.repo}#${in.issueId}` reuse the original issue workspace and agent session across PR follow-up runs.
 
 Webhook handling is still single-match. One incoming webhook request launches at most one workflow.
@@ -342,7 +344,7 @@ The redelivery service stores its checkpoint next to the tracked run artifacts u
 - For PR-scoped workflows, the GitHub provider populates `issueId` from GitHub's `closingIssuesReferences` result when GitHub resolves a linked issue for that PR.
 - The current GitHub provider emits `issue:at` and `pr:at` when the bot handle appears in issue or PR comments.
 - Inline `pull_request_review_comment` deliveries with `comment.pull_request_review_id` are treated as part of the submitted review and do not emit standalone `pr:comment` or `pr:at` triggers.
-- `gh.requireMention` defaults to `true`. Set it to `false` if you want `/plan` and `/approve` to work on issues without a leading bot mention.
+- `gh.requireMention` defaults to `true`. With the default setting, issue slash commands must start with `@<BotName> /<command>` after optional leading whitespace. Set it to `false` if you want bare issue commands such as `/plan`, `/approve`, or `/ship.release:stable_1` to work without a leading bot mention.
 - Closed issues do not dispatch normal issue-comment or slash-command workflows.
 - `gh.ignoreApprovalReview` defaults to `true`. Set it to `false` if approved PR reviews should still trigger `pr:review`.
 - The executor launch environment is merged as `base process env -> executor env -> trigger env`.

@@ -24,11 +24,11 @@ import { resolveGitHubProviderConfig } from "./github-config.js";
  * - issue:open
  * - issue:close
  *   Emitted for GitHub "issues" events when action === "opened" or "closed".
- * - issue:command:plan
- * - issue:command:approve
- * - issue:command:reset
+ * - issue:command:<name>
  *   Emitted for GitHub "issue_comment" events on issues when the comment
- *   starts with a supported slash command after an optional leading mention.
+ *   starts with a leading slash command after an optional leading mention.
+ *   Command names normalize to lowercase and accept letters, digits, `-`,
+ *   `.`, `:`, and `_`.
  * - issue:at
  *   Emitted for GitHub "issue_comment" events on issues whenever the comment
  *   mentions the bot handle anywhere in the body.
